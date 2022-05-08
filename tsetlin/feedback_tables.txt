@@ -7,9 +7,9 @@ c      literal  include 1   p reward      p penalty       p inaction
 -      l = 1    a = 0      1/s            0                (s-1)/s		8,11
 -      l = 0    a = 0      1/s            0                (s-1)/s		0,3
 
-+      l = 1    a = 1       (s-1)/s        NA              1/s
++      l = 1    a = 1       (s-1)/s        NA              1/s			28,31
 +      l = 0    a = 1       NA             NA              NA           20,23   
-+      l = 1    a = 0       0              1/s             (s-1)/s      24
++      l = 1    a = 0       0              1/s             (s-1)/s      24,27
 +      l = 0    a = 0       1/s            0               (s-1)/s		16,19
 *)
 
@@ -20,7 +20,7 @@ type 2 feedback table y<>w
 -      l = 1    a = 0       0              0               1.0			9,10
 -      l = 0    a = 0       0              0               1.0		    1,2
 
-+      l = 1    a = 1       0              0               1.0
++      l = 1    a = 1       0              0               1.0			29,30
 +      l = 0    a = 1       NA             NA              NA           21     
 +      l = 1    a = 0       0              0               1.0			25,26
 +      l = 0    a = 0       0              1.0             0			17,18

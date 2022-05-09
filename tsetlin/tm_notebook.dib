@@ -1,0 +1,138 @@
+#!markdown
+
+# Tsetline Machine 
+Tsetlin machine (TM) is a recently developed machine learning system based on automata (finite state machines / propositional logic) learning. Please see [this paper](https://arxiv.org/abs/1804.01508) for details. 
+
+TM is said to be competitive on many tasks with other ML methods (both DL & classical). However, the main draw is that TM-based models are faster to train and more energy-efficient when used for inferencing than models based on other ML methods - while providing similar accuracy. As ML becomes pervasive, the compute and power costs of deployed models becomes non-trivial. TM may help to reign in runtime and training costs associated with ML at scale.
+
+This notebook demonstrates how PyTorch (or TorchSharp) may be used to train a TM. The main benefit is that training can be parllelized by taking advantage of GPU hardware. This implementation, as much as feasible, relies on the available tensor operations in PyTorch to speed up TM training and inferencing.
+
+#!markdown
+
+## Setup environment
+
+#!fsharp
+
+#r "nuget: TorchSharp, 0.95.5"
+#r "nuget: libtorch-cuda-11.3-win-x64, 1.10.0.1"  //GPU package takes a while to download (9GB)
+//#r "nuget: libtorch-cpu, 1.10.0.1"
+open TorchSharp
+
+#!markdown
+
+# TM
+
+#!markdown
+
+### Payout Matrix
+TM learning utilizes a game-theoretic feedback mechanism. The core of games is a payout matrix. The penalty / reward / inaction associated with the various 'outcomes' is defined below. Please refer to the paper for details.
+
+#!fsharp
+
+let inaction = 0.0f
+let pnlty    = -1.0f
+
+let payout s = 
+    let ``1/s``     = 1.0f / s
+    let ``(s-1)/s`` = (s - 1.0f) / s
+    [|
+    (*polarity    literal     action  Cw  y     p_reward *)
+    (*0           0           0       0   0 *)  ``1/s``         //0
+    (*0           0           0       0   1 *)  inaction        //1
+    (*0           0           0       1   0 *)  inaction        //2
+    (*0           0           0       1   1 *)  ``1/s``         //3
+    (*0           0           1       0   0 *)  -``1/s``        //4
+    (*0           0           1       0   1 *)  inaction        //5
+    (*0           0           1       1   0 *)  inaction        //6
+    (*0           0           1       1   1 *)  -``1/s``        //7
+    (*0           1           0       0   0 *)  ``1/s``         //8
+    (*0           1           0       0   1 *)  inaction        //9
+    (*0           1           0       1   0 *)  inaction        //10
+    (*0           1           0       1   1 *)  ``1/s``         //11
+    (*0           1           1       0   0 *)  -``1/s``        //12
+    (*0           1           1       0   1 *)  inaction        //13
+    (*0           1           1       1   0 *)  inaction        //14
+    (*0           1           1       1   1 *)  -``1/s``        //15
+    (*1           0           0       0   0 *)  ``1/s``         //16
+    (*1           0           0       0   1 *)  pnlty           //17
+    (*1           0           0       1   0 *)  pnlty           //18
+    (*1           0           0       1   1 *)  ``1/s``         //19
+    (*1           0           1       0   0 *)  inaction        //20
+    (*1           0           1       0   1 *)  inaction        //21
+    (*1           0           1       1   0 *)  inaction        //22
+    (*1           0           1       1   1 *)  inaction        //23
+    (*1           1           0       0   0 *)  -``1/s``        //24
+    (*1           1           0       0   1 *)  inaction        //25
+    (*1           1           0       1   0 *)  inaction        //26
+    (*1           1           0       1   1 *)  -``1/s``        //27
+    (*1           1           1       0   0 *)  ``(s-1)/s``     //28
+    (*1           1           1       0   1 *)  inaction        //29
+
+    (*1           1           1       1   0 *)  inaction        //30
+    (*1           1           1       1   1 *)  ``(s-1)/s``     //31
+    |]
+
+let payoutMatrix = torch.tensor(payout 3.0f, dimensions = [|2L;2L;2L;2L;2L|])
+
+#!markdown
+
+## Train
+
+#!fsharp
+
+//test input
+
+let input = torch.tensor([|1;0;0;1|],dtype=torch.int8)  
+let y = torch.tensor([|0|],dtype=torch.int8)
+let clauses = torch.tensor([|1;5;6;2
+                             1;3;2;6|],dimensions=[|2L; 4L|],dtype=torch.int8) //2-clause TM 
+let polarity = torch.tensor([|1;0|],dimensions=[|clauses.shape.[0];1L|],dtype=torch.int8)
+let plrtySgn = torch.tensor([|1;-1|],dimensions=[|clauses.shape.[0];1L|],dtype=torch.int8)
+
+#!fsharp
+
+//eval each literal against each tsetlin automaton (TA)
+let evalTA (input:torch.Tensor) (clauses:torch.Tensor) = 
+    let input2 = input.broadcast_to(clauses.shape)
+    use t3 = torch.tensor(3uy)
+    use filter = clauses.greater(t3)
+    use omask = torch.ones_like(input2)
+    torch.where(filter,input2,omask)
+
+//AND the outputs of TAs by each clause
+let andClause (evals:torch.Tensor)  =
+    use prods = rs.cumprod(1L,``type``=torch.int8)
+    prods.[torch.TensorIndex.Ellipsis,torch.TensorIndex.Single(-1L)]
+
+let sumClauses (clauseEvals:torch.Tensor) (plrtySgn:torch.Tensor) =
+    let withPlry = clauseEvals.mul(plrtySgn)
+    withPlry.sum().clamp(0,1).to_type(torch.int8)   
+
+
+    
+
+#!fsharp
+
+let taEvals = evalTA input clauses //num_clauses * input
+let clauseEvals = andClause taEvals
+let y' = sumClauses clauseEvals plrtySgn
+//polarity, literal, action, Cw, y -> p_reward [2x2x2x2x2]
+
+#!fsharp
+
+let inp_cls = torch.hstack(ResizeArray[input_f; clauses])
+let t3 = torch.tensor([|3y|])
+let filter = clauses.greater(t3)
+
+let zs = torch.zeros_like(clauses)
+let os = torch.ones_like(clauses)
+let ce_t = clauseEvals.reshape(-1L,1L)
+(*polarity    literal     action  Cw  y   ->  p_reward *)
+let polarity_f = polarity.expand_as(input_f).reshape([|1L;-1L|]).to_type(torch.int64)
+let literal_f = input.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
+let action_f = torch.where(filter,os,zs).reshape([|1L;-1L|]).to_type(torch.int64)
+let cw_f = torch.hstack(ResizeArray[for _ in 1 .. int input.shape.[0] -> ce_t]).reshape([|1L;-1L|]).to_type(torch.int64)
+let y_f = y.expand_as(input_f).reshape([|1L;-1L|]).to_type(torch.int64)
+let payouts = payoutMatrix.index([|polarity_f; literal_f; action_f; cw_f; y_f|])
+display(payouts.data<float32>().ToArray())
+display(payouts.shape)

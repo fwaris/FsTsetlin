@@ -72,67 +72,95 @@ let payout s =
     (*1           1           1       1   1 *)  ``(s-1)/s``     //31
     |]
 
-let payoutMatrix = torch.tensor(payout 3.0f, dimensions = [|2L;2L;2L;2L;2L|])
-
 #!markdown
 
 ## Train
 
 #!fsharp
 
-//test input
+//eval each literal against each tsetlin automaton (TA) in the clauses
+let evalTA trainMode (input:torch.Tensor) (clauses:torch.Tensor) = 
+    let input2 = input.broadcast_to(clauses.shape)
+    use t3 = torch.tensor(3uy)
+    use filter = clauses.greater(t3)
+    use omask = if trainMode then torch.ones_like(input2) else torch.zeros_like(input2)
+    torch.where(filter,input2,omask)
 
+//AND the outputs of TAs by clause
+let andClause (evals:torch.Tensor)  =
+    use prods = evals.cumprod(1L,``type``=torch.int8)
+    prods.[torch.TensorIndex.Ellipsis,torch.TensorIndex.Single(-1L)]
+
+//sum positive and negative polarity clause outputs
+let sumClauses (clauseEvals:torch.Tensor) (plrtySgn:torch.Tensor) =
+    use withPlry = clauseEvals.mul(plrtySgn)
+    withPlry.sum().to_type(torch.float32)
+
+//obtain +/- reward probabilities for each TA (for type I and II feedback)
+let rewardProb (payoutMatrix:torch.Tensor) (input:torch.Tensor) (clauses:torch.Tensor) (clauseEvals:torch.Tensor) (polarity:torch.Tensor) (y:torch.Tensor) =
+    use t3 = torch.tensor([|3y|])
+    use filter = clauses.greater(t3)
+    use zs = torch.zeros_like(clauses)
+    use os = torch.ones_like(clauses)
+    let ce_t = clauseEvals.reshape(-1L,1L)
+    (*polarity    literal     action  Cw  y   ->  p_reward *)
+    let polarity_f = polarity.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
+    let literal_f = input.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
+    let action_f = torch.where(filter,os,zs).reshape([|1L;-1L|]).to_type(torch.int64)
+    let cw_f = torch.hstack(ResizeArray[for _ in 1 .. int input.shape.[0] -> ce_t]).reshape([|1L;-1L|]).to_type(torch.int64)
+    let y_f = y.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
+    payoutMatrix.index([|polarity_f; literal_f; action_f; cw_f; y_f|])
+
+//postive, negative or no feedback for each TA
+let feedback (T:float32) (pReward:torch.Tensor) (y:torch.Tensor) =
+    use tPlus = torch.tensor(T)
+    use tMinus = torch.tensor(-T)
+    use t2 = (2.0f * T).ToScalar()
+    use selY1 = (tPlus - v.clamp(tMinus,tPlus)) / t2  //feedback selection prob. when y=1
+    use selY0 = (tPlus + v.clamp(tMinus,tPlus)) / t2  //feedback selection prob. when y=0 
+    use uRand = torch.rand_like(pReward)              //tensor of uniform random values (for feedback selection)
+    use feebackFilter =                               //bool tensor; true if random <= [selY0 or selY1] (based on the value of y )
+        if y.ToSingle() <= 0.f then 
+            uRand.less_equal(selY0) 
+        else 
+            uRand.less(selY1)                      
+    use zeros = torch.zeros_like(pReward)                 //zero filled tensor - same shape as reward probabilities
+    use pRewardSel = pReward.where(feebackFilter,zeros)   //keep reward prob if filter tensor value is true, zero otherwise
+    use negRewards = pRewardSel.minimum(zeros)          //separate out negative reward prob.
+    use posRewards = pRewardSel.maximum(zeros)          //separate out postive reward prob.
+    use uRandRwrd = torch.rand_like(pRewardSel)         //tensor of uniform random values for reward selection
+    use negRwdFltr = uRandRwrd.less_equal(negRewards.abs_()) //negative reward filter reflecting random selection
+    use posRwdFltr = uRandRwrd.less_equal(posRewards)        //positive reward filter reflecting random selection
+    use negOnes = torch.full_like(pRewardSel,-1, dtype=torch.uint8)     //negative ones - will be used for negative feedback
+    use posOnes = torch.full_like(pRewardSel, 1, dtype=torch.uint8)     //positive ones - will be used for positive feedback
+    use zerosI8 = torch.zeros_like(pRewardSel,dtype=torch.uint8)        
+    use negFeedback = negOnes.where(negRwdFltr,zerosI8)
+    use posFeedback = posOnes.where(posRwdFltr,zerosI8)
+    use feedbackByte = negFeedback + posFeedback
+    feedbackByte.to_type(torch.int8)
+
+#!fsharp
+
+//test input
+//hyper-parameters
+let s = 3.0f
+let T = 5.0f
+let payoutMatrix = torch.tensor(payout s, dimensions = [|2L;2L;2L;2L;2L|])
 let input = torch.tensor([|1;0;0;1|],dtype=torch.int8)  
 let y = torch.tensor([|0|],dtype=torch.int8)
 let clauses = torch.tensor([|1;5;6;2
                              1;3;2;6|],dimensions=[|2L; 4L|],dtype=torch.int8) //2-clause TM 
 let polarity = torch.tensor([|1;0|],dimensions=[|clauses.shape.[0];1L|],dtype=torch.int8)
 let plrtySgn = torch.tensor([|1;-1|],dimensions=[|clauses.shape.[0];1L|],dtype=torch.int8)
+let tensorData<'a when 'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = t.data<'a>().ToArray()
 
 #!fsharp
 
-//eval each literal against each tsetlin automaton (TA)
-let evalTA (input:torch.Tensor) (clauses:torch.Tensor) = 
-    let input2 = input.broadcast_to(clauses.shape)
-    use t3 = torch.tensor(3uy)
-    use filter = clauses.greater(t3)
-    use omask = torch.ones_like(input2)
-    torch.where(filter,input2,omask)
-
-//AND the outputs of TAs by each clause
-let andClause (evals:torch.Tensor)  =
-    use prods = rs.cumprod(1L,``type``=torch.int8)
-    prods.[torch.TensorIndex.Ellipsis,torch.TensorIndex.Single(-1L)]
-
-let sumClauses (clauseEvals:torch.Tensor) (plrtySgn:torch.Tensor) =
-    let withPlry = clauseEvals.mul(plrtySgn)
-    withPlry.sum().clamp(0,1).to_type(torch.int8)   
-
-
-    
-
-#!fsharp
-
-let taEvals = evalTA input clauses //num_clauses * input
+let taEvals = evalTA true input clauses //num_clauses * input
 let clauseEvals = andClause taEvals
-let y' = sumClauses clauseEvals plrtySgn
-//polarity, literal, action, Cw, y -> p_reward [2x2x2x2x2]
+let v = sumClauses clauseEvals plrtySgn
+let pReward = rewardProb payoutMatrix input clauses clauseEvals polarity y
 
-#!fsharp
-
-let inp_cls = torch.hstack(ResizeArray[input_f; clauses])
-let t3 = torch.tensor([|3y|])
-let filter = clauses.greater(t3)
-
-let zs = torch.zeros_like(clauses)
-let os = torch.ones_like(clauses)
-let ce_t = clauseEvals.reshape(-1L,1L)
-(*polarity    literal     action  Cw  y   ->  p_reward *)
-let polarity_f = polarity.expand_as(input_f).reshape([|1L;-1L|]).to_type(torch.int64)
-let literal_f = input.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
-let action_f = torch.where(filter,os,zs).reshape([|1L;-1L|]).to_type(torch.int64)
-let cw_f = torch.hstack(ResizeArray[for _ in 1 .. int input.shape.[0] -> ce_t]).reshape([|1L;-1L|]).to_type(torch.int64)
-let y_f = y.expand_as(input_f).reshape([|1L;-1L|]).to_type(torch.int64)
-let payouts = payoutMatrix.index([|polarity_f; literal_f; action_f; cw_f; y_f|])
-display(payouts.data<float32>().ToArray())
-display(payouts.shape)
+//display(pReward.shape)
+//display(pReward.data<float32>().ToArray())
+//display(tensorData<int64> clauseVote)

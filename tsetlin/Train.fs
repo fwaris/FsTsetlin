@@ -9,7 +9,7 @@ module Train =
         let ``1/s``     = 1.0f / s
         let ``(s-1)/s`` = (s - 1.0f) / s
         [|
-        (*polarity    literal     action  Cw  y     p_reward *)
+        (*polarity    literal     action  Cw  y     p_reward *)-
         (*0           0           0       0   0 *)  ``1/s``         //0
         (*0           0           0       0   1 *)  inaction        //1
         (*0           0           0       1   0 *)  inaction        //2

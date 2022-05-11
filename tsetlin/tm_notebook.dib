@@ -5,7 +5,11 @@ Tsetlin machine (TM) is a recently developed machine learning system based on au
 
 TM is said to be competitive on many tasks with other ML methods (both DL & classical). However, the main draw is that TM-based models are faster to train and more energy-efficient when used for inferencing than models based on other ML methods - while providing similar accuracy. As ML becomes pervasive, the compute and power costs of deployed models becomes non-trivial. TM may help to reign in runtime and training costs associated with ML at scale.
 
-This notebook demonstrates how PyTorch (or TorchSharp) may be used to train a TM. The main benefit is that training can be parllelized by taking advantage of GPU hardware. This implementation, as much as feasible, relies on the available tensor operations in PyTorch to speed up TM training and inferencing.
+This notebook demonstrates how PyTorch (or TorchSharp) may be used to train a TM. The objective is to parallelize training by taking advantage of GPU hardware. This implementation, as much as is feasible, relies on the available tensor operations in PyTorch so that the maximum amount of computation can be performed on the GPU.
+
+Although this implementation is in F#, the goal is to define a largely language-agnostic computation approach that can be easily ported to other languages (e.g. Python, Java, etc.), as long as the language has a binding to libtorch - the C++ library underlying PyTorch.
+
+There are other GPU implementations available (see [github repo](https://github.com/cair/TsetlinMachine)). None of these use tensor operations from a standard tensor library. By using PyTorch as an established standard, the desire is to gain wider deployment portability. For example, the TM may be trained on a GPU but later deployed to a CPU-based environment for inferencing, to save costs.
 
 #!markdown
 
@@ -75,6 +79,7 @@ let payout s =
 #!markdown
 
 ## Train
+Functions to train (and evaluate) Tsetline machine clauses from input data using PyTorch (TorchSharp) tensor operations
 
 #!fsharp
 
@@ -83,7 +88,7 @@ let evalTA trainMode (input:torch.Tensor) (clauses:torch.Tensor) =
     let input2 = input.broadcast_to(clauses.shape)
     use t3 = torch.tensor(3uy)
     use filter = clauses.greater(t3)
-    use omask = if trainMode then torch.ones_like(input2) else torch.zeros_like(input2)
+    use omask = if trainMode then torch.ones_like(input2) else torch.zeros_like(input2)   //default to 1 for training and 0 for evaluation
     torch.where(filter,input2,omask)
 
 //AND the outputs of TAs by clause
@@ -112,7 +117,7 @@ let rewardProb (payoutMatrix:torch.Tensor) (input:torch.Tensor) (clauses:torch.T
     payoutMatrix.index([|polarity_f; literal_f; action_f; cw_f; y_f|])
 
 //postive, negative or no feedback for each TA
-let feedback (T:float32) (pReward:torch.Tensor) (y:torch.Tensor) =
+let taFeeback (T:float32) (v:torch.Tensor) (pReward:torch.Tensor) (y:torch.Tensor) =
     use tPlus = torch.tensor(T)
     use tMinus = torch.tensor(-T)
     use t2 = (2.0f * T).ToScalar()
@@ -137,30 +142,81 @@ let feedback (T:float32) (pReward:torch.Tensor) (y:torch.Tensor) =
     use negFeedback = negOnes.where(negRwdFltr,zerosI8)
     use posFeedback = posOnes.where(posRwdFltr,zerosI8)
     use feedbackByte = negFeedback + posFeedback
-    feedbackByte.to_type(torch.int8)
+    feedbackByte.to_type(torch.int8)                                 //final feedback tensor with -1, +1 or 0 values 
+
+//inplace update clauses
+let updateClauses_ (clauses:torch.Tensor) (feedback:torch.Tensor) =
+    clauses.add_(feedback.reshape(clauses.shape)).clamp_(1uy,6uy)
+
+//udpated clauses as a new tensor
+let updateClauses (clauses:torch.Tensor) (feedback:torch.Tensor) =
+    clauses.add(feedback.reshape(clauses.shape)).clamp_(1uy,6uy)
+
+//update clauses on single input - optimized for producton
+let trainStep  T payoutMatrix (polarity,plrtySgn) clauses (input,y) = 
+    use taEvals = evalTA true input clauses //num_clauses * input
+    use clauseEvals = andClause taEvals
+    use v = sumClauses clauseEvals plrtySgn
+    use pReward = rewardProb payoutMatrix input clauses clauseEvals polarity y
+    use feedback = taFeeback T v pReward y
+    updateClauses_ clauses feedback |> ignore
+
+//debug version of update that returns intermediate results
+let trainStepDbg T payoutMatrix (polarity,plrtySgn) clauses (input,y)  =
+    let taEvals = evalTA true input clauses //num_clauses * input
+    let clauseEvals = andClause taEvals
+    let v = sumClauses clauseEvals plrtySgn
+    let pReward = rewardProb payoutMatrix input clauses clauseEvals polarity y
+    let feedback = taFeeback T v pReward y
+    let updtClss = updateClauses clauses feedback 
+    taEvals,clauseEvals,v,pReward,feedback,updtClss
+
+
+    
+
+#!markdown
+
+# Testing
+The following is a simple 2-clause Testline machine of polarity 0 and 1, resp. It accepts a 2-bit input (4-bits when input is extended with negations, as required). Threfore each clause has 4 Tsetlin automaton. 
+
+The machine updated with a single input observation where X = [|1;0;0;1|] and Y = 0.
 
 #!fsharp
 
-//test input
 //hyper-parameters
 let s = 3.0f
 let T = 5.0f
-let payoutMatrix = torch.tensor(payout s, dimensions = [|2L;2L;2L;2L;2L|])
-let input = torch.tensor([|1;0;0;1|],dtype=torch.int8)  
-let y = torch.tensor([|0|],dtype=torch.int8)
+let payoutMatrix = torch.tensor(payout s, dimensions = [|2L;2L;2L;2L;2L|])                  //construct the payout matrix from the s hyper-parameter
+let X = torch.tensor([|1;0;0;1|],dtype=torch.int8)                                          //x = 1,0 (plus negated)
+let y = torch.tensor([|0|],dtype=torch.int8)                                                //y = 0
 let clauses = torch.tensor([|1;5;6;2
-                             1;3;2;6|],dimensions=[|2L; 4L|],dtype=torch.int8) //2-clause TM 
-let polarity = torch.tensor([|1;0|],dimensions=[|clauses.shape.[0];1L|],dtype=torch.int8)
-let plrtySgn = torch.tensor([|1;-1|],dimensions=[|clauses.shape.[0];1L|],dtype=torch.int8)
+                             1;3;2;6|],dimensions=[|2L; 4L|],dtype=torch.int8)              //2-clause TM - each value reflects an automaton state
+let polarity = torch.tensor([|1;0|],dimensions=[|clauses.shape.[0];1L|],dtype=torch.int8)   //polarity of the clauses as 0/1 
+let plrtySgn = torch.tensor([|1;-1|],dimensions=[|clauses.shape.[0];1L|],dtype=torch.int8)  //polarity of the clasues as +/- (these need to be created once only)
+
+//utility function to get raw tensor data as a flat array (shape is not retained)
 let tensorData<'a when 'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = t.data<'a>().ToArray()
+
+#!markdown
+
+### Update TM using a single oberservation (X,y)
+Perform a single update step on the TM using the debug version of the training step function. The debug version returns the intermedate values as well as the updated clauses. The input (X,y) , intermedidate values and clause states (before and after) are printed to the console for inspection.
 
 #!fsharp
 
-let taEvals = evalTA true input clauses //num_clauses * input
-let clauseEvals = andClause taEvals
-let v = sumClauses clauseEvals plrtySgn
-let pReward = rewardProb payoutMatrix input clauses clauseEvals polarity y
+let (taEvals,clauseEvals,v,pReward,feedback,updtClss) = trainStepDbg T payoutMatrix (polarity,plrtySgn) clauses (X,y) 
+printfn "X: %A, y: %A" (tensorData<int8> input) (y.ToInt32())
+printfn "orig clauses: %A" (tensorData<int8> clauses)
+printfn "taEvals: %A" (tensorData<int8> taEvals)
+printfn "clauseEvals: %A" (tensorData<int8> clauseEvals)
+printfn "v: %A" (tensorData<float32> v)
+printfn "pReward: %A" (tensorData<float32> pReward)
+printfn "feedback (randomized): %A" (tensorData<int8> feedback)
+printfn "updt clauses: %A" (tensorData<int8> updtClss)
 
-//display(pReward.shape)
-//display(pReward.data<float32>().ToArray())
-//display(tensorData<int64> clauseVote)
+#!markdown
+
+# Summary and Next Steps
+The goal of this notebook is to showcase the use of tensor operations as a feasible means of training Tsetlin machines on GPUs. It is intended for better understanding Tsetline machines internals and for debuging and troubleshooting (it may not be fully correct).
+
+Planned is a library / package that provides a high-level API to train Testlin machines using PyTorch tensor operations. The implementation here can only address binary classification problems. Many real-world problems are mult-class. Fornuately, there is an easy way to extend TM to handle multi-class problems. Support for multi-class is also planned.

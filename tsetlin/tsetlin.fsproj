@@ -6,13 +6,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="models\NoisyXor.fsx" />
     <None Include="notebooks\tm_notebook.ipynb" />
     <Content Include="notebooks\tm_notebook.dib" />
-    <None Include="scripts\sandbox.fsx" />
-    <None Include="scripts\ts_tsetlin.fsx" />
-    <None Include="scripts\packages.fsx" />
     <Content Include="scripts\feedback_tables.txt" />
-    <None Include="scripts\Script1.fsx" />
+    <None Include="scripts\packages.fsx" />
+    <None Include="scripts\sandbox.fsx" />
     <Compile Include="Tsetlin.fs" />
   </ItemGroup>
 
@@ -21,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="6.0.3" />
+    <PackageReference Update="FSharp.Core" Version="6.0.4" />
   </ItemGroup>
 
 </Project>

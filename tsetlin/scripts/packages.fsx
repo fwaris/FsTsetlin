@@ -7,5 +7,4 @@ System.Runtime.InteropServices.NativeLibrary.Load(LIBTORCH) |> ignore
 let path = System.Environment.GetEnvironmentVariable("path")
 let path' = $"{path};{LIBTORCH}"
 System.Environment.SetEnvironmentVariable("path",path')
-//#r "nuget: CATNeuro, Version=1.2.1"
 

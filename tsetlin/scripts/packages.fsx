@@ -1,4 +1,5 @@
 ﻿#r "nuget: TorchSharp"
+#r "nuget: Plotly.NET"
 
 let LIBTORCH = 
     let path = System.Environment.GetEnvironmentVariable("LIBTORCH")

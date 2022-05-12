@@ -3,6 +3,7 @@
 open System.IO
 open FsTsetlin
 open TorchSharp
+open Plotly.NET
 
 let testDataFile = __SOURCE_DIRECTORY__ + @"/../../data/NoisyXORTestData.txt" 
 let trainDataFile = __SOURCE_DIRECTORY__ + @"/../../data/NoisyXORTrainingData.txt" 
@@ -17,10 +18,19 @@ let loadData (path:string) =
         let y = xs[12]
         X,y)
 
+let taStates (tm:TM) =
+    let dt = tm.Clauses.``to``(torch.CPU).data<int8>().ToArray()
+    dt |> Array.chunkBySize (tm.Config.InputSize * 2)
+
+let showClauses (tm:TM) =
+    taStates tm
+    |> Array.iteri (fun i x -> printfn "%d %A" i x)    
+
+
 let trainData = loadData trainDataFile
 let testData = loadData testDataFile
 
-let device = torch.CPU // if torch.cuda.is_available() then torch.CUDA else torch.CPU
+let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
 printfn $"cuda: {torch.cuda.is_available()}"
 
 let toTensor cfg (batch:(int[]*int)[]) =
@@ -43,16 +53,33 @@ let cfg =
 
 let tm = TM.create cfg
 
+let eval() =
+    trainData
+    |> Seq.chunkBySize 1000
+    |> Seq.map (toTensor tm.Config)
+    |> Seq.collect (fun (X,y) -> 
+        [for i in 0L .. X.shape.[0] - 1L do
+            yield TM.eval X.[i] tm, y.[i].ToInt32()
+        ])
+    |> Seq.map (fun (y',y) -> if y' = y then 1.0 else 0.0)
+    |> Seq.average
+
 let train epochs =
     for i in 1 .. epochs do
         trainData
-        |> Seq.chunkBySize 100 
-        |> Seq.map (toTensor cfg)
+        |> Seq.chunkBySize 1000 
+        |> Seq.map (toTensor tm.Config)
         |> Seq.iter (fun (X,y) -> 
             TM.trainBatch (X,y) tm
             X.Dispose()
             y.Dispose())
+#time
+train 100
+eval()
 
-train 1
+showClauses tm
 
-       
+let tas = taStates tm
+tas |> Array.map(fun xs -> xs |> Array.indexed |> Chart.Line) |> Chart.combine |> Chart.show
+
+

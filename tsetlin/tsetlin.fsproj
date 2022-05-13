@@ -12,6 +12,7 @@
     <Content Include="scripts\feedback_tables.txt" />
     <None Include="scripts\packages.fsx" />
     <None Include="scripts\sandbox.fsx" />
+    <None Include="scripts\debug.fsx" />
     <Compile Include="Tsetlin.fs" />
   </ItemGroup>
 

@@ -58,3 +58,12 @@ let i_action   = torch.tensor([|0L;1L|])
 let t = tsrc.index([|i_polarity;i_literal;i_action|])
 t.data<float32>().ToArray()
 
+let rng = System.Random()
+let x = rng.NextDouble()
+let mv = System.Double.MaxValue
+let j = x / mv
+
+let target = 15.
+let t1 = (2.* target) - 1.0
+let j = 3
+let jsgn = 1 - 2 * (j &&& 1)

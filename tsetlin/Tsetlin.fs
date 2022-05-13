@@ -6,7 +6,6 @@ type Config =
         s           : float32
         T           : float32
         TAStates    : int
-        MidState    : int
         dtype       : torch.ScalarType
         Device      : torch.Device
         Clauses     : int
@@ -26,15 +25,23 @@ module Eval =
         
     //eval each literal against each tsetlin automaton (TA) in the clauses
     let evalTA cfg trainMode (clauses:torch.Tensor)  (input:torch.Tensor) = 
-        let input2 = input.broadcast_to(clauses.shape)
-        use tMid = torch.tensor(cfg.MidState, device=cfg.Device)
-        use filter = clauses.greater(tMid)
-        use omask = 
-            if trainMode then 
-                torch.ones_like(input2, device=cfg.Device)      //set to 1 for training and 0 for evaluation
-            else 
-                torch.zeros_like(input2, device=cfg.Device)   
-        torch.where(filter,input2,omask)
+        let input2   = input.broadcast_to(clauses.shape)                     //make input the same shape as clauses
+        use tMid     = torch.tensor(cfg.TAStates, device=cfg.Device)
+        use filter   = clauses.greater(tMid)                                 //determine 'include'/'exclude' actions
+        let ones     = torch.ones_like(input2)  
+        let taOutput = torch.where(filter,input2,ones)                      //take input if action = include else 1 (which skips excluded input when and'ing)
+        if not trainMode then
+            use alExs = filter.any(1L,keepDim=true)                         //true if all actions are 'exclude' for a clause
+            if alExs.any().ToBoolean() then
+                let zeros = torch.zeros_like(input2)                        //at evaluation time, clauses with all actions excluded return 0
+                let adjOutput = torch.where(alExs,zeros,taOutput)
+                taOutput.Dispose()
+                adjOutput
+            else
+                taOutput
+        else
+            taOutput
+            
 
     //AND the outputs of TAs by clause
     let andClause cfg (evals:torch.Tensor)  =
@@ -44,14 +51,14 @@ module Eval =
     //sum positive and negative polarity clause outputs
     let sumClauses cfg (clauseEvals:torch.Tensor) (plrtySgn:torch.Tensor) =
         use withPlry = clauseEvals.mul(plrtySgn)
-        withPlry.sum().to_type(torch.float32)
+        withPlry.sum().to_type(torch.float32).clamp_((-cfg.T).ToScalar(),cfg.T.ToScalar())
 
 
 module Train = 
     //obtain +/- reward probabilities for each TA (for type I and II feedback)
     let rewardProb cfg 
         (payoutMatrix:torch.Tensor) (clauses:torch.Tensor) (clauseEvals:torch.Tensor) (polarityIndex:torch.Tensor) (X:torch.Tensor,y:torch.Tensor) =
-        use tMid = torch.tensor([|cfg.MidState|], device=cfg.Device)
+        use tMid = torch.tensor([|cfg.TAStates|], device=cfg.Device)
         use filter = clauses.greater(tMid)
         use zs = torch.zeros_like(clauses, device=cfg.Device)
         use os = torch.ones_like(clauses, device=cfg.Device)
@@ -166,8 +173,9 @@ module TM =
         |]
 
     let create (cfg:Config) =
+        let rng = System.Random()
         let numTAs = cfg.Clauses * (cfg.InputSize * 2)
-        let initialState = [|for i in 0..numTAs-1 -> cfg.MidState|]
+        let initialState = [|for i in 0..numTAs-1 -> if rng.NextDouble() < 0.5 then cfg.TAStates else cfg.TAStates+1|]
         let plrtyBin = [|for i in 0 .. cfg.Clauses-1 -> i % 2|]
         let plrtySgn = [|for i in 0 .. cfg.Clauses-1 -> if i%2 = 0 then -1 else 1|]           
         let clauses = torch.tensor(initialState, dtype=cfg.dtype, dimensions = [|int64 cfg.Clauses; cfg.InputSize * 2 |> int64|], device=cfg.Device)
@@ -195,6 +203,12 @@ module TM =
         use clauseEvals = Eval.andClause tm.Config taEvals
         use v = Eval.sumClauses tm.Config clauseEvals tm.PolaritySign
         if v.ToSingle() > 0.f then 1 else 0
+
+    let evalBatch (X:torch.Tensor) (tm:TM) =
+        let batchSze = X.shape.[0]
+        [|for i in 0L .. batchSze - 1L do
+            eval X.[i] tm
+        |]
 
             
             

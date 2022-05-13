@@ -1,4 +1,5 @@
 ﻿#load @"../scripts/packages.fsx"
+open System
 open System.IO
 open FsTsetlin
 open TorchSharp
@@ -25,11 +26,10 @@ let showClauses (tm:TM) =
     taStates tm
     |> Array.iteri (fun i x -> printfn "%d %A" i x)    
 
-
 let trainData = loadData trainDataFile
 let testData = loadData testDataFile
 
-let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
+let device = torch.CPU // if torch.cuda.is_available() then torch.CUDA else torch.CPU
 printfn $"cuda: {torch.cuda.is_available()}"
 
 let toTensor cfg (batch:(int[]*int)[]) =
@@ -43,7 +43,7 @@ let cfg =
         s           = 3.9f
         T           = 15.0f
         TAStates    = 100
-        Clauses     = 20
+        Clauses     = 5
         dtype       = torch.int8
         Device      = device
         InputSize   = 12
@@ -52,7 +52,7 @@ let cfg =
 let tm = TM.create cfg
 
 let eval() =
-    testData
+    trainData
     |> Seq.chunkBySize 1000
     |> Seq.map (toTensor tm.Config)
     |> Seq.collect (fun (X,y) -> 
@@ -72,10 +72,12 @@ let train epochs =
             X.Dispose()
             y.Dispose())
 #time
-train 10
+train 1
 ;;
 eval()
 ;;
+
+
 
 (*
 showClauses tm
@@ -84,5 +86,17 @@ let tas = taStates tm
 tas |> Array.map(fun xs -> xs |> Array.indexed |> Chart.Line) |> Chart.combine |> Chart.show
 
 *)
+//utility function to get raw tensor data as a flat array (shape is not retained)
+let tensorData<'a when 'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = t.data<'a>().ToArray()
 
+
+let t1 = torch.tensor([|0;1;3;4|],dimensions=[|2L;2L|])
+let t2 = t1.greater(2)
+tensorData<bool> t2
+
+let t3 = t2.any(1L)
+tensorData<bool> t3
+
+let t4 = t2.any(1L,keepDim=false)
+tensorData<bool> t4
 

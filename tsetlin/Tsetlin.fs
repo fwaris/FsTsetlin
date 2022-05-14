@@ -51,7 +51,7 @@ module Eval =
     //sum positive and negative polarity clause outputs
     let sumClauses cfg (clauseEvals:torch.Tensor) (plrtySgn:torch.Tensor) =
         use withPlry = clauseEvals.mul(plrtySgn)
-        withPlry.sum().to_type(torch.float32).clamp_((-cfg.T).ToScalar(),cfg.T.ToScalar())
+        withPlry.sum().to_type(torch.float32)
 
 
 module Train = 
@@ -77,37 +77,50 @@ module Train =
         use t2 = (2.0f * cfg.T).ToScalar()
         use selY1 = (tPlus - v.clamp(tMinus,tPlus)) / t2  //feedback selection prob. when y=1
         use selY0 = (tPlus + v.clamp(tMinus,tPlus)) / t2  //feedback selection prob. when y=0 
-        use uRand = torch.rand_like(pReward)              //tensor of uniform random values (for feedback selection)
+        use uRand = torch.rand_like(pReward)              //tensor of uniform random values for Feedback selection
         use feebackFilter =                               //bool tensor; true if random <= [selY0 or selY1] (based on the value of y )
             if y.ToSingle() <= 0.f then 
                 uRand.less_equal(selY0) 
             else 
-                uRand.less(selY1)                      
+                uRand.less_equal(selY1)                      
         use zeros = torch.zeros_like(pReward)                 //zero filled tensor - same shape as reward probabilities
         use pRewardSel = pReward.where(feebackFilter,zeros)   //keep reward prob if filter tensor value is true, zero otherwise
         use negRewards = pRewardSel.minimum(zeros)          //separate out negative reward prob.
         use posRewards = pRewardSel.maximum(zeros)          //separate out postive reward prob.
-        use uRandRwrd = torch.rand_like(pRewardSel)         //tensor of uniform random values for reward selection
+        use uRandRwrd = torch.rand_like(pRewardSel)         //tensor of uniform random values for Reward/Penalty selection
         use negRwdFltr = uRandRwrd.less_equal(negRewards.abs_()) //negative reward filter reflecting random selection
         use posRwdFltr = uRandRwrd.less_equal(posRewards)        //positive reward filter reflecting random selection
-        use negOnes = torch.full_like(pRewardSel,-1, dtype=cfg.dtype)     //negative ones - will be used for negative feedback
-        use posOnes = torch.full_like(pRewardSel, 1, dtype=cfg.dtype)     //positive ones - will be used for positive feedback
-        use zerosInt = torch.zeros_like(pRewardSel, dtype=cfg.dtype)        
+        use negOnes = torch.full_like(pRewardSel,-1)     //negative ones - will be used for negative feedback
+        use posOnes = torch.full_like(pRewardSel, 1)     //positive ones - will be used for positive feedback
+        use zerosInt = torch.zeros_like(pRewardSel)        
         use negFeedback = negOnes.where(negRwdFltr,zerosInt)
         use posFeedback = posOnes.where(posRwdFltr,zerosInt)
         negFeedback + posFeedback                                   //final feedback tensor with -1, +1 or 0 values 
 
-    //inplace update clauses
-    let updateClauses_ (cfg:Config) (clauses:torch.Tensor) (feedback:torch.Tensor) =
-        let l = Scalar.op_Implicit 1
-        let h = Scalar.op_Implicit cfg.TAStates            
-        clauses.add_(feedback.reshape(clauses.shape)).clamp_(l,h)
+    //calculate feedback incr/decr values based on selected feedback reward(+)/penalty(-)/ignore(0) and TA state
+    let feedbackIncrDecr (cfg:Config) (clauses:torch.Tensor) (feedback:torch.Tensor) =
+        use tMid = torch.tensor([|cfg.TAStates|], device=cfg.Device)
+        use filterGreater = clauses.greater(tMid)
+        use filterLessEqual = clauses.less_equal(tMid)
+        use negOnes = torch.full_like(clauses,-1)     //negative ones - will be used for negative feedback
+        use posOnes = torch.full_like(clauses, 1)     //positive ones - will be used for positive feedback
+        let zeros   = torch.zeros_like(clauses)
+        let highs = torch.where(filterGreater,posOnes,zeros)
+        let lows = torch.where(filterLessEqual,negOnes,zeros)
+        use feedbackPolarity = highs + lows
+        feedbackPolarity.mul(feedback.reshape(clauses.shape))
 
-    //udpated clauses as a new tensor
-    let updateClauses cfg (clauses:torch.Tensor) (feedback:torch.Tensor) =
+    //inplace update clauses
+    let updateClauses_ (cfg:Config) (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
         let l = Scalar.op_Implicit 1
-        let h = Scalar.op_Implicit cfg.TAStates            
-        clauses.add(feedback.reshape(clauses.shape)).clamp_(l,h)
+        let h = Scalar.op_Implicit (2*cfg.TAStates)
+        clauses.add_(incrDecr).clamp_(l,h)
+
+    //udpated clauses as a new tensor (for debugging purposes)
+    let updateClauses (cfg:Config) (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
+        let l = Scalar.op_Implicit 1
+        let h = Scalar.op_Implicit (2*cfg.TAStates)
+        clauses.add(incrDecr).clamp_(l,h)
 
     //update clauses on single input - optimized for producton
     let trainStep cfg payoutMatrix (polarity,plrtySgn) clauses (X,y) = 
@@ -116,7 +129,8 @@ module Train =
         use v = Eval.sumClauses cfg clauseEvals plrtySgn
         use pReward = rewardProb cfg payoutMatrix clauses clauseEvals polarity (X,y)
         use feedback = taFeeback cfg v pReward y
-        updateClauses_ cfg clauses feedback |> ignore
+        use fbIncrDecr = feedbackIncrDecr cfg clauses feedback 
+        updateClauses_ cfg clauses fbIncrDecr |> ignore
 
     //debug version of update that returns intermediate results
     let trainStepDbg cfg payoutMatrix (polarity,plrtySgn) clauses (X,y)  =
@@ -125,8 +139,9 @@ module Train =
         let v = Eval.sumClauses cfg clauseEvals plrtySgn
         let pReward = rewardProb cfg payoutMatrix clauses clauseEvals polarity (X,y)
         let feedback = taFeeback cfg v pReward y
-        let updtClss = updateClauses cfg clauses feedback 
-        taEvals,clauseEvals,v,pReward,feedback,updtClss
+        let fbIncrDecr = feedbackIncrDecr cfg clauses feedback 
+        let updtClss = updateClauses cfg clauses fbIncrDecr 
+        taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss
 
 module TM =
     let inaction = 0.0f

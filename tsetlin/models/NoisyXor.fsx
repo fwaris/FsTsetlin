@@ -18,7 +18,7 @@ let loadData (path:string) =
         X,y)
 
 let taStates (tm:TM) =
-    let dt = tm.Clauses.``to``(torch.CPU).data<int8>().ToArray()
+    let dt = tm.Clauses.``to``(torch.CPU).data<int16>().ToArray()
     dt |> Array.chunkBySize (tm.Invariates.Config.InputSize * 2)
 
 let showClauses (tm:TM) =
@@ -44,7 +44,7 @@ let cfg =
         T           = 15.0f
         TAStates    = 100
         Clauses     = 20
-        dtype       = torch.int8
+        dtype       = torch.int16
         Device      = device
         InputSize   = 12
     }

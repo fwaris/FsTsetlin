@@ -112,8 +112,11 @@ module Train =
         use uRandRwrd = torch.rand_like(pRewardSel)         //tensor of uniform random values for Reward/Penalty selection
         use negRwdFltr = uRandRwrd.less_equal(negRewards.abs_()) //negative reward filter reflecting random selection
         use posRwdFltr = uRandRwrd.less_equal(posRewards)        //positive reward filter reflecting random selection
-        use negFeedback = invrts.MinusOnes.where(negRwdFltr,invrts.Zeros)
-        use posFeedback = invrts.Ones.where(posRwdFltr,invrts.Zeros)
+        use zeros = invrts.Zeros.reshape(pReward.shape)
+        use ones = invrts.Ones.reshape(pReward.shape)
+        use minusOnes = invrts.MinusOnes.reshape(pReward.shape)
+        use negFeedback = minusOnes.where(negRwdFltr,zeros)
+        use posFeedback = ones.where(posRwdFltr,zeros)
         negFeedback + posFeedback                                   //final feedback tensor with -1, +1 or 0 values 
 
     ///calculate feedback incr/decr values based on selected feedback reward(+)/penalty(-)/ignore(0) and TA state
@@ -131,7 +134,8 @@ module Train =
 
     ///udpated clauses as a new tensor (for debugging purposes)
     let updateClauses invrts (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
-        clauses.add(incrDecr).clamp_(invrts.LowState,invrts.HighState)
+        let clss = clauses.add(incrDecr)
+        clss.clamp_(invrts.LowState,invrts.HighState)
 
     ///update clauses on single input - optimized for producton
     let trainStep invrts clauses (X,y) = 
@@ -144,14 +148,14 @@ module Train =
         updateClauses_ invrts clauses fbIncrDecr |> ignore
 
     //debug version of update that returns intermediate results
-    let trainStepDbg invrts payoutMatrix (polarity,plrtySgn) clauses (X,y)  =
+    let trainStepDbg invrts clauses (X,y)  =
         let taEvals = Eval.evalTA invrts true clauses X //num_clauses * input
         let clauseEvals = Eval.andClause invrts taEvals
         let v = Eval.sumClauses invrts clauseEvals
         let pReward = rewardProb invrts clauses clauseEvals (X,y)
         let feedback = taFeeback invrts v pReward y
         let fbIncrDecr = feedbackIncrDecr invrts clauses feedback 
-        let updtClss = updateClauses_ invrts clauses fbIncrDecr 
+        let updtClss = updateClauses invrts clauses fbIncrDecr 
         taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss
 
 module TM =
@@ -207,9 +211,9 @@ module TM =
         let clauses = torch.tensor(initialState, dtype=cfg.dtype, dimensions = [|int64 cfg.Clauses; cfg.InputSize * 2 |> int64|], device=cfg.Device)
         let polarity = torch.tensor(plrtyBin, dtype=cfg.dtype, device=cfg.Device, dimensions=[|clauses.shape.[0]; 1L|])
         let polarityIdx = polarity.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
-        use tPlus = torch.tensor(cfg.T, device=cfg.Device)
-        use tMinus = torch.tensor(-cfg.T, device=cfg.Device)
-        use t2 = torch.tensor(2.0f * cfg.T,device=cfg.Device)
+        let tPlus = torch.tensor(cfg.T, device=cfg.Device)
+        let tMinus = torch.tensor(-cfg.T, device=cfg.Device)
+        let t2 = torch.tensor(2.0f * cfg.T,device=cfg.Device)
 
         let cache =
             {

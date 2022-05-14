@@ -18,12 +18,12 @@ let loadData (path:string) =
         let y = xs[12]
         X,y)
 
-let taStates (tm:TM) =
-    let dt = tm.Clauses.``to``(torch.CPU).data<int8>().ToArray()
-    dt |> Array.chunkBySize (tm.Config.InputSize * 2)
+let taStates invariates (clauses:torch.Tensor)=
+    let dt = clauses.``to``(torch.CPU).data<int16>().ToArray()
+    dt |> Array.chunkBySize (invariates.Config.InputSize * 2)
 
-let showClauses (tm:TM) =
-    taStates tm
+let showClauses invariates clauses =
+    taStates invariates clauses
     |> Array.iteri (fun i x -> printfn "%d %A" i x)    
 
 let trainData = loadData trainDataFile
@@ -44,7 +44,7 @@ let cfg =
         T           = 15.0f
         TAStates    = 100
         Clauses     = 5
-        dtype       = torch.int8
+        dtype       = torch.int16
         Device      = device
         InputSize   = 12
     }
@@ -54,7 +54,7 @@ let tm = TM.create cfg
 let eval() =
     trainData
     |> Seq.chunkBySize 1000
-    |> Seq.map (toTensor tm.Config)
+    |> Seq.map (toTensor tm.Invariates.Config)
     |> Seq.collect (fun (X,y) -> 
         [for i in 0L .. X.shape.[0] - 1L do
             yield TM.eval X.[i] tm, y.[i].ToInt32()
@@ -66,14 +66,33 @@ let train epochs =
     for i in 1 .. epochs do
         trainData
         |> Seq.chunkBySize 1000 
-        |> Seq.map (toTensor tm.Config)
+        |> Seq.map (toTensor tm.Invariates.Config)
         |> Seq.iter (fun (X,y) -> 
             TM.trainBatch (X,y) tm
             X.Dispose()
             y.Dispose())
         printfn $"{i}: {eval()}"
-        showClauses tm
+        showClauses tm.Invariates tm.Clauses
 #time
+
+let X1,y1 = [|trainData |> Seq.head|] |> toTensor tm.Invariates.Config
+
+let taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss = Train.trainStepDbg tm.Invariates tm.Clauses (X1.squeeze(),y1.squeeze())
+
+showClauses tm.Invariates tm.Clauses
+showClauses tm.Invariates updtClss
+
+Utils.tensorData<int16> taEvals
+Utils.tensorData<int16> clauseEvals
+Utils.tensorData<int16> X1
+Utils.tensorData<int16> y1
+Utils.tensorData<float32> (pReward.reshape(tm.Clauses.shape))
+Utils.tensorData<int16> (feedback.reshape(tm.Clauses.shape))
+Utils.tensorData<int16> fbIncrDecr
+Utils.tensorData<int16> updtClss
+
+
+
 
 train 1
 

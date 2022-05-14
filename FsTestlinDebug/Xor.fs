@@ -1,11 +1,11 @@
-﻿#load @"../scripts/packages.fsx"
+﻿module Xor
+
 open System.IO
 open FsTsetlin
 open TorchSharp
-open Plotly.NET
 
-let testDataFile = __SOURCE_DIRECTORY__ + @"/../../data/NoisyXORTestData.txt" 
-let trainDataFile = __SOURCE_DIRECTORY__ + @"/../../data/NoisyXORTrainingData.txt" 
+let testDataFile = __SOURCE_DIRECTORY__ + @"/../data/NoisyXORTestData.txt" 
+let trainDataFile = __SOURCE_DIRECTORY__ + @"/../data/NoisyXORTrainingData.txt" 
 
 let loadData (path:string) =
     File.ReadLines path
@@ -19,7 +19,7 @@ let loadData (path:string) =
 
 let taStates (tm:TM) =
     let dt = tm.Clauses.``to``(torch.CPU).data<int8>().ToArray()
-    dt |> Array.chunkBySize (tm.Invariates.Config.InputSize * 2)
+    dt |> Array.chunkBySize (tm.Config.InputSize * 2)
 
 let showClauses (tm:TM) =
     taStates tm
@@ -54,7 +54,7 @@ let tm = TM.create cfg
 let eval() =
     testData
     |> Seq.chunkBySize 1000
-    |> Seq.map (toTensor tm.Invariates.Config)
+    |> Seq.map (toTensor tm.Config)
     |> Seq.collect (fun (X,y) -> 
         [for i in 0L .. X.shape.[0] - 1L do
             yield TM.eval X.[i] tm, y.[i].ToInt32()
@@ -66,19 +66,18 @@ let train epochs =
     for i in 1 .. epochs do
         trainData
         |> Seq.chunkBySize 1000 
-        |> Seq.map (toTensor tm.Invariates.Config)
+        |> Seq.map (toTensor tm.Config)
         |> Seq.iter (fun (X,y) -> 
             TM.trainBatch (X,y) tm
             X.Dispose()
             y.Dispose())
-        printfn $"{i}: {eval()}"
 
-#time
-
-train 1
-;;
-eval()
-;;
+let run() = 
+    train 1
+    ;;
+    let acc = eval()
+    printfn "%f" acc
+    ;;
 
 (*
 showClauses tm

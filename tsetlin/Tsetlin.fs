@@ -1,5 +1,6 @@
 ﻿namespace FsTsetlin 
 open TorchSharp
+open System
 
 type Config = 
     {
@@ -12,135 +13,145 @@ type Config =
         InputSize   : int
     }
 
-type TM =
+/// cache invariates for optimization
+type Invariates = 
     {
-        Clauses         : torch.Tensor
+        Config          : Config
         PolarityIndex   : torch.Tensor
         PolaritySign    : torch.Tensor
         PayoutMatrix    : torch.Tensor
-        Config          : Config
+        MidState        : torch.Tensor
+        LowState        : torch.Tensor
+        HighState       : torch.Tensor
+        Ones            : torch.Tensor
+        Zeros           : torch.Tensor
+        MinusOnes       : torch.Tensor
+        TPlus           : torch.Tensor
+        TMinus          : torch.Tensor
+        T2              : torch.Tensor
     }
+
+type TM =
+    {
+        Clauses         : torch.Tensor
+        Invariates      : Invariates
+    }
+
+module Utils =
+    type D<'a> = F of 'a[] | T of D<'a>[]
+
+    //utility function to get raw tensor data as a recursive structure for debugging purposes
+    let tensorData<'a when 'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = 
+        let ts = t.data<'a>().ToArray()
+        let rdims =
+            t.shape 
+            |> Array.map int 
+            |> Array.rev
+            |> Array.toList
+        let rec loop ds (xs:D<'a>) =
+            match ds,xs with
+            | [],_         -> xs
+            | d::rest,T ds -> loop rest (ds |> Array.chunkBySize d |> Array.map T |> T)
+            | d::rest,F ds -> loop rest (ds |> Array.chunkBySize d |> Array.map F |> T)
+        loop rdims (F ts)
         
 module Eval = 
-        
-    //eval each literal against each tsetlin automaton (TA) in the clauses
-    let evalTA cfg trainMode (clauses:torch.Tensor)  (input:torch.Tensor) = 
-        let input2   = input.broadcast_to(clauses.shape)                     //make input the same shape as clauses
-        use tMid     = torch.tensor(cfg.TAStates, device=cfg.Device)
-        use filter   = clauses.greater(tMid)                                 //determine 'include'/'exclude' actions
-        let ones     = torch.ones_like(input2)  
-        let taOutput = torch.where(filter,input2,ones)                      //take input if action = include else 1 (which skips excluded input when and'ing)
-        if not trainMode then
-            use alExs = filter.any(1L,keepDim=true)                         //true if all actions are 'exclude' for a clause
+    
+    ///eval each literal against each tsetlin automaton (TA) in the clauses
+    let evalTA invrts trainMode (clauses:torch.Tensor)  (input:torch.Tensor) = 
+        use input2   = input.broadcast_to(clauses.shape)                                    //make input the same shape as clauses
+        use filter   = clauses.greater(invrts.MidState)                                     //determine 'include'/'exclude' actions
+        let taOutput = torch.where(filter,input2,invrts.Ones)                               //take input if action = include else 1 (which skips excluded input when and'ing)
+        if not trainMode then   
+            use alExs = filter.any(1L,keepDim=true)                                         //true if all actions are 'exclude' for a clause
             if alExs.any().ToBoolean() then
-                let zeros = torch.zeros_like(input2)                        //at evaluation time, clauses with all actions excluded return 0
-                let adjOutput = torch.where(alExs,zeros,taOutput)
+                let adjOutput = torch.where(alExs,invrts.Zeros,taOutput)
                 taOutput.Dispose()
                 adjOutput
             else
                 taOutput
         else
             taOutput
-            
 
-    //AND the outputs of TAs by clause
-    let andClause cfg (evals:torch.Tensor)  =
-        use prods = evals.cumprod(1L,``type``=cfg.dtype)
+    ///AND the outputs of TAs by clause
+    let andClause invrts (evals:torch.Tensor)  =
+        use prods = evals.cumprod(1L,``type``=invrts.Config.dtype)
         prods.[torch.TensorIndex.Ellipsis,torch.TensorIndex.Single(-1L)]
 
-    //sum positive and negative polarity clause outputs
-    let sumClauses cfg (clauseEvals:torch.Tensor) (plrtySgn:torch.Tensor) =
-        use withPlry = clauseEvals.mul(plrtySgn)
+    ///sum positive and negative polarity clause outputs
+    let sumClauses invrts (clauseEvals:torch.Tensor) =
+        use withPlry = clauseEvals.mul(invrts.PolaritySign)
         withPlry.sum().to_type(torch.float32)
 
-
 module Train = 
-    //obtain +/- reward probabilities for each TA (for type I and II feedback)
-    let rewardProb cfg 
-        (payoutMatrix:torch.Tensor) (clauses:torch.Tensor) (clauseEvals:torch.Tensor) (polarityIndex:torch.Tensor) (X:torch.Tensor,y:torch.Tensor) =
-        use tMid = torch.tensor([|cfg.TAStates|], device=cfg.Device)
-        use filter = clauses.greater(tMid)
-        use zs = torch.zeros_like(clauses, device=cfg.Device)
-        use os = torch.ones_like(clauses, device=cfg.Device)
-        let ce_t = clauseEvals.reshape(-1L,1L)
+    ///obtain +/- reward probabilities for each TA (for type I and II feedback)
+    let rewardProb invrts (clauses:torch.Tensor) (clauseEvals:torch.Tensor) (X:torch.Tensor,y:torch.Tensor) =
+        use filter = clauses.greater(invrts.MidState)
+        use ce_t = clauseEvals.reshape(-1L,1L)
         (*polarity    literal     action  Cw  y   ->  p_reward *)
-        let literal_f = X.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
-        let action_f = torch.where(filter,os,zs).reshape([|1L;-1L|]).to_type(torch.int64)
-        let cw_f = torch.hstack(ResizeArray[for _ in 1 .. int X.shape.[0] -> ce_t]).reshape([|1L;-1L|]).to_type(torch.int64)
-        let y_f = y.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
-        payoutMatrix.index([|polarityIndex; literal_f; action_f; cw_f; y_f|])
+        use literal_f = X.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
+        use action_f = torch.where(filter,invrts.Ones,invrts.Zeros).reshape([|1L;-1L|]).to_type(torch.int64)
+        use cw_f = torch.hstack(ResizeArray[for _ in 1 .. int X.shape.[0] -> ce_t]).reshape([|1L;-1L|]).to_type(torch.int64)
+        use y_f = y.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
+        invrts.PayoutMatrix.index([|invrts.PolarityIndex; literal_f; action_f; cw_f; y_f|])
 
-    //postive, negative or no feedback for each TA
-    let taFeeback cfg (v:torch.Tensor) (pReward:torch.Tensor) (y:torch.Tensor) =
-        use tPlus = torch.tensor(cfg.T, device=cfg.Device)
-        use tMinus = torch.tensor(-cfg.T, device=cfg.Device)
-        use t2 = (2.0f * cfg.T).ToScalar()
-        use selY1 = (tPlus - v.clamp(tMinus,tPlus)) / t2  //feedback selection prob. when y=1
-        use selY0 = (tPlus + v.clamp(tMinus,tPlus)) / t2  //feedback selection prob. when y=0 
+    ///postive, negative or no feedback for each TA
+    let taFeeback invrts (v:torch.Tensor) (pReward:torch.Tensor) (y:torch.Tensor) =
+        use selY1 = (invrts.TPlus - v.clamp(invrts.TMinus,invrts.TPlus)) / invrts.T2  //feedback selection prob. when y=1
+        use selY0 = (invrts.TPlus + v.clamp(invrts.TMinus,invrts.TPlus)) / invrts.T2  //feedback selection prob. when y=0 
         use uRand = torch.rand_like(pReward)              //tensor of uniform random values for Feedback selection
         use feebackFilter =                               //bool tensor; true if random <= [selY0 or selY1] (based on the value of y )
             if y.ToSingle() <= 0.f then 
                 uRand.less_equal(selY0) 
             else 
                 uRand.less_equal(selY1)                      
-        use zeros = torch.zeros_like(pReward)                 //zero filled tensor - same shape as reward probabilities
-        use pRewardSel = pReward.where(feebackFilter,zeros)   //keep reward prob if filter tensor value is true, zero otherwise
+        use zeros = torch.zeros_like(pReward)                   //zero filled tensor - same shape as reward probabilities
+        use pRewardSel = pReward.where(feebackFilter,zeros)     //keep reward prob if filter tensor value is true, zero otherwise
         use negRewards = pRewardSel.minimum(zeros)          //separate out negative reward prob.
         use posRewards = pRewardSel.maximum(zeros)          //separate out postive reward prob.
         use uRandRwrd = torch.rand_like(pRewardSel)         //tensor of uniform random values for Reward/Penalty selection
         use negRwdFltr = uRandRwrd.less_equal(negRewards.abs_()) //negative reward filter reflecting random selection
         use posRwdFltr = uRandRwrd.less_equal(posRewards)        //positive reward filter reflecting random selection
-        use negOnes = torch.full_like(pRewardSel,-1)     //negative ones - will be used for negative feedback
-        use posOnes = torch.full_like(pRewardSel, 1)     //positive ones - will be used for positive feedback
-        use zerosInt = torch.zeros_like(pRewardSel)        
-        use negFeedback = negOnes.where(negRwdFltr,zerosInt)
-        use posFeedback = posOnes.where(posRwdFltr,zerosInt)
+        use negFeedback = invrts.MinusOnes.where(negRwdFltr,invrts.Zeros)
+        use posFeedback = invrts.Ones.where(posRwdFltr,invrts.Zeros)
         negFeedback + posFeedback                                   //final feedback tensor with -1, +1 or 0 values 
 
-    //calculate feedback incr/decr values based on selected feedback reward(+)/penalty(-)/ignore(0) and TA state
-    let feedbackIncrDecr (cfg:Config) (clauses:torch.Tensor) (feedback:torch.Tensor) =
-        use tMid = torch.tensor([|cfg.TAStates|], device=cfg.Device)
-        use filterGreater = clauses.greater(tMid)
-        use filterLessEqual = clauses.less_equal(tMid)
-        use negOnes = torch.full_like(clauses,-1)     //negative ones - will be used for negative feedback
-        use posOnes = torch.full_like(clauses, 1)     //positive ones - will be used for positive feedback
-        let zeros   = torch.zeros_like(clauses)
-        let highs = torch.where(filterGreater,posOnes,zeros)
-        let lows = torch.where(filterLessEqual,negOnes,zeros)
+    ///calculate feedback incr/decr values based on selected feedback reward(+)/penalty(-)/ignore(0) and TA state
+    let feedbackIncrDecr invrts (clauses:torch.Tensor) (feedback:torch.Tensor) =
+        use filterGreater = clauses.greater(invrts.MidState)
+        use filterLessEqual = clauses.less_equal(invrts.MidState)
+        use highs = torch.where(filterGreater,invrts.Ones,invrts.Zeros)
+        use lows = torch.where(filterLessEqual,invrts.MinusOnes,invrts.Zeros)
         use feedbackPolarity = highs + lows
         feedbackPolarity.mul(feedback.reshape(clauses.shape))
 
-    //inplace update clauses
-    let updateClauses_ (cfg:Config) (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
-        let l = Scalar.op_Implicit 1
-        let h = Scalar.op_Implicit (2*cfg.TAStates)
-        clauses.add_(incrDecr).clamp_(l,h)
+    ///inplace update clauses
+    let updateClauses_ invrts (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
+        clauses.add_(incrDecr).clamp_(invrts.LowState,invrts.HighState)
 
-    //udpated clauses as a new tensor (for debugging purposes)
-    let updateClauses (cfg:Config) (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
-        let l = Scalar.op_Implicit 1
-        let h = Scalar.op_Implicit (2*cfg.TAStates)
-        clauses.add(incrDecr).clamp_(l,h)
+    ///udpated clauses as a new tensor (for debugging purposes)
+    let updateClauses invrts (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
+        clauses.add(incrDecr).clamp_(invrts.LowState,invrts.HighState)
 
-    //update clauses on single input - optimized for producton
-    let trainStep cfg payoutMatrix (polarity,plrtySgn) clauses (X,y) = 
-        use taEvals = Eval.evalTA cfg true clauses X //num_clauses * input
-        use clauseEvals = Eval.andClause cfg taEvals
-        use v = Eval.sumClauses cfg clauseEvals plrtySgn
-        use pReward = rewardProb cfg payoutMatrix clauses clauseEvals polarity (X,y)
-        use feedback = taFeeback cfg v pReward y
-        use fbIncrDecr = feedbackIncrDecr cfg clauses feedback 
-        updateClauses_ cfg clauses fbIncrDecr |> ignore
+    ///update clauses on single input - optimized for producton
+    let trainStep invrts clauses (X,y) = 
+        use taEvals = Eval.evalTA invrts true clauses X //num_clauses * input
+        use clauseEvals = Eval.andClause invrts taEvals
+        use v = Eval.sumClauses invrts clauseEvals
+        use pReward = rewardProb invrts clauses clauseEvals (X,y)
+        use feedback = taFeeback invrts v pReward y
+        use fbIncrDecr = feedbackIncrDecr invrts clauses feedback 
+        updateClauses_ invrts clauses fbIncrDecr |> ignore
 
     //debug version of update that returns intermediate results
-    let trainStepDbg cfg payoutMatrix (polarity,plrtySgn) clauses (X,y)  =
-        let taEvals = Eval.evalTA cfg true clauses X  //num_clauses * input
-        let clauseEvals = Eval.andClause cfg taEvals
-        let v = Eval.sumClauses cfg clauseEvals plrtySgn
-        let pReward = rewardProb cfg payoutMatrix clauses clauseEvals polarity (X,y)
-        let feedback = taFeeback cfg v pReward y
-        let fbIncrDecr = feedbackIncrDecr cfg clauses feedback 
-        let updtClss = updateClauses cfg clauses fbIncrDecr 
+    let trainStepDbg invrts payoutMatrix (polarity,plrtySgn) clauses (X,y)  =
+        let taEvals = Eval.evalTA invrts true clauses X //num_clauses * input
+        let clauseEvals = Eval.andClause invrts taEvals
+        let v = Eval.sumClauses invrts clauseEvals
+        let pReward = rewardProb invrts clauses clauseEvals (X,y)
+        let feedback = taFeeback invrts v pReward y
+        let fbIncrDecr = feedbackIncrDecr invrts clauses feedback 
+        let updtClss = updateClauses_ invrts clauses fbIncrDecr 
         taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss
 
 module TM =
@@ -196,17 +207,33 @@ module TM =
         let clauses = torch.tensor(initialState, dtype=cfg.dtype, dimensions = [|int64 cfg.Clauses; cfg.InputSize * 2 |> int64|], device=cfg.Device)
         let polarity = torch.tensor(plrtyBin, dtype=cfg.dtype, device=cfg.Device, dimensions=[|clauses.shape.[0]; 1L|])
         let polarityIdx = polarity.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
+        use tPlus = torch.tensor(cfg.T, device=cfg.Device)
+        use tMinus = torch.tensor(-cfg.T, device=cfg.Device)
+        use t2 = torch.tensor(2.0f * cfg.T,device=cfg.Device)
 
+        let cache =
+            {
+                PolarityIndex   = polarityIdx
+                PolaritySign    = torch.tensor(plrtySgn, dtype=cfg.dtype, device=cfg.Device)
+                PayoutMatrix    = torch.tensor(payout cfg.s, dimensions = [|2L;2L;2L;2L;2L|], device=cfg.Device)   
+                MidState        = torch.tensor([|cfg.TAStates|],dtype=cfg.dtype, device=cfg.Device)
+                LowState        = torch.tensor([|1|],dtype=cfg.dtype,device=cfg.Device)
+                HighState       = torch.tensor([|2*cfg.TAStates|],dtype=cfg.dtype,device=cfg.Device)
+                Zeros           = torch.zeros_like(clauses)
+                Ones            = torch.ones_like(clauses)
+                MinusOnes       = torch.full_like(clauses,-1)
+                Config          = cfg
+                TPlus           = tPlus
+                TMinus          = tMinus
+                T2              = t2
+            }
         {
-            Clauses         = clauses
-            PolarityIndex   = polarityIdx
-            PolaritySign    = torch.tensor(plrtySgn, dtype=cfg.dtype, device=cfg.Device)
-            PayoutMatrix    = torch.tensor(payout cfg.s, dimensions = [|2L;2L;2L;2L;2L|], device=cfg.Device)   
-            Config          = cfg
+            Clauses     = clauses
+            Invariates  = cache
         }
 
     let train (X,y) (tm:TM) =
-        Train.trainStep tm.Config tm.PayoutMatrix (tm.PolarityIndex,tm.PolaritySign) tm.Clauses (X,y)
+        Train.trainStep tm.Invariates tm.Clauses (X,y)
 
     let trainBatch (X:torch.Tensor,y:torch.Tensor) (tm:TM) =
         let batchSze = X.shape.[0]
@@ -214,9 +241,9 @@ module TM =
             train (X.[i],y.[i]) tm
 
     let eval X (tm:TM) =
-        use taEvals = Eval.evalTA tm.Config false tm.Clauses X //num_clauses * input
-        use clauseEvals = Eval.andClause tm.Config taEvals
-        use v = Eval.sumClauses tm.Config clauseEvals tm.PolaritySign
+        use taEvals = Eval.evalTA tm.Invariates false tm.Clauses X //num_clauses * input
+        use clauseEvals = Eval.andClause tm.Invariates taEvals
+        use v = Eval.sumClauses tm.Invariates clauseEvals
         if v.ToSingle() > 0.f then 1 else 0
 
     let evalBatch (X:torch.Tensor) (tm:TM) =

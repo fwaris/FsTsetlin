@@ -71,21 +71,17 @@ let train epochs =
             TM.trainBatch (X,y) tm
             X.Dispose()
             y.Dispose())
+        printfn $"{i}: {eval()}"
+        showClauses tm
 #time
+
 train 1
-;;
-eval()
-;;
-
-
 
 (*
-showClauses tm
 
 let tas = taStates tm
 tas |> Array.map(fun xs -> xs |> Array.indexed |> Chart.Line) |> Chart.combine |> Chart.show
 
-*)
 //utility function to get raw tensor data as a flat array (shape is not retained)
 let tensorData<'a when 'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = t.data<'a>().ToArray()
 
@@ -100,3 +96,4 @@ tensorData<bool> t3
 let t4 = t2.any(1L,keepDim=false)
 tensorData<bool> t4
 
+*)

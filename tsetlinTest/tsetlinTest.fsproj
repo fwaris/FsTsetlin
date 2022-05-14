@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="TMTests.fs" />
+    <Compile Include="UnitTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

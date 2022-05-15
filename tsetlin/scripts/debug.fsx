@@ -97,7 +97,7 @@ let printClause i =
     let tas         = Utils.tensorData<int16> taEvals
     let clauseEvals = Utils.tensorData<int16> clauseEvals
     let input       = Utils.tensorData<int16> X1
-    let ty           = Utils.tensorData<int16> y1
+    let ty          = Utils.tensorData<int16> y1
     let rewards     = Utils.tensorData<float32> (pReward.reshape(tm.Clauses.shape))
     let feeback     = Utils.tensorData<int16> (feedback.reshape(tm.Clauses.shape))
     let clss        = Utils.tensorData<int16> tm.Clauses
@@ -115,6 +115,8 @@ let printClause i =
     Array.zip3 act prob inp1
     |> Array.iter (fun (a,p,l) -> printfn $"C:{clsout}, y:{y}, w:{w}, L:{l}, act:{(if a = 0s then 'i' else 'x')}, pReward: {mapProb p}" )
 
+printClause 0
+printClause 1
 
 
 (*

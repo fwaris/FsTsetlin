@@ -29,7 +29,7 @@ let showClauses (tm:TM) =
 let trainData = loadData trainDataFile
 let testData = loadData testDataFile
 
-let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
+let device = torch.CPU // if torch.cuda.is_available() then torch.CUDA else torch.CPU
 printfn $"cuda: {torch.cuda.is_available()}"
 
 let toTensor cfg (batch:(int[]*int)[]) =
@@ -44,7 +44,7 @@ let cfg =
         T           = 15.0f
         TAStates    = 100
         Clauses     = 20
-        dtype       = torch.int16
+        dtype       = torch.int32
         Device      = device
         InputSize   = 12
     }
@@ -92,17 +92,17 @@ let eval1s() =
 let train epochs =
     for i in 1 .. epochs do
         trainData
-        |> Seq.chunkBySize 1000 
+        |> Seq.chunkBySize 10000 
         |> Seq.map (toTensor tm.Invariates.Config)
         |> Seq.iter (fun (X,y) -> 
             TM.trainBatch (X,y) tm
             X.Dispose()
             y.Dispose())
-        printfn $"{i}: {eval()}"
+        printfn $"{i}"//: {eval()}"
 
 #time
 
-train 1
+train 200
 ;;
 
 

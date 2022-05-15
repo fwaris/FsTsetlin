@@ -73,30 +73,52 @@ let train epochs =
             y.Dispose())
         printfn $"{i}: {eval()}"
         showClauses tm.Invariates tm.Clauses
-#time
+        
 
-let X1,y1 = [|trainData |> Seq.head|] |> toTensor tm.Invariates.Config
+let tX1,ty1 = [|trainData |> Seq.head|] |> toTensor tm.Invariates.Config
+let X1=tX1.squeeze()
+let y1=ty1.squeeze()
 
-let taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss = Train.trainStepDbg tm.Invariates tm.Clauses (X1.squeeze(),y1.squeeze())
+let taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss = Train.trainStepDbg tm.Invariates tm.Clauses (X1,y1)
 
-showClauses tm.Invariates tm.Clauses
-showClauses tm.Invariates updtClss
+let s = 3.9f
+let ``1/s``     = 1.0f / s
+let ``(s-1)/s`` = (s - 1.0f) / s
+let ( =^ ) a b = abs (a - b) < 0.000001f
+let mapProb x = 
+    if x =^ ``1/s`` then sprintf "``1/s``; " 
+    elif x =^ ``(s-1)/s`` then sprintf "``(s-1)/s``; " 
+    elif x =^ -``1/s`` then sprintf "-``1/s``; " 
+    elif x =^ -``(s-1)/s`` then sprintf "-``(s-1)/s``; " 
+    else sprintf "%f" x
 
-Utils.tensorData<int16> taEvals
-Utils.tensorData<int16> clauseEvals
-Utils.tensorData<int16> X1
-Utils.tensorData<int16> y1
-Utils.tensorData<float32> (pReward.reshape(tm.Clauses.shape))
-Utils.tensorData<int16> (feedback.reshape(tm.Clauses.shape))
-Utils.tensorData<int16> fbIncrDecr
-Utils.tensorData<int16> updtClss
+let printClause i =
+    // let i = 1
+    let tas         = Utils.tensorData<int16> taEvals
+    let clauseEvals = Utils.tensorData<int16> clauseEvals
+    let input       = Utils.tensorData<int16> X1
+    let ty           = Utils.tensorData<int16> y1
+    let rewards     = Utils.tensorData<float32> (pReward.reshape(tm.Clauses.shape))
+    let feeback     = Utils.tensorData<int16> (feedback.reshape(tm.Clauses.shape))
+    let clss        = Utils.tensorData<int16> tm.Clauses
+    let fbIncrDecr  = Utils.tensorData<int16> fbIncrDecr
+    let updClss     = Utils.tensorData<int16> updtClss
+    let polarity    = Utils.tensorData<int64> (tm.Invariates.PolarityIndex.reshape(tm.Clauses.shape))
+
+    let act = match tas with Utils.T (ds) -> match ds.[i] with Utils.F xs -> xs 
+    let prob = match rewards with Utils.T ds -> match ds.[i] with Utils.F xs -> xs
+    let inp1 = match input with Utils.F xs -> xs
+    let clsout = match clauseEvals with Utils.F xs -> xs.[i]
+    let y = match ty with Utils.F xs -> xs.[0]
+    let w = match polarity with Utils.T ds -> match ds.[i] with Utils.F xs -> xs.[0]
+
+    Array.zip3 act prob inp1
+    |> Array.iter (fun (a,p,l) -> printfn $"C:{clsout}, y:{y}, w:{w}, L:{l}, act:{(if a = 0s then 'i' else 'x')}, pReward: {mapProb p}" )
 
 
-
-
-train 1
 
 (*
+#time
 
 let tas = taStates tm
 tas |> Array.map(fun xs -> xs |> Array.indexed |> Chart.Line) |> Chart.combine |> Chart.show
@@ -114,5 +136,25 @@ tensorData<bool> t3
 
 let t4 = t2.any(1L,keepDim=false)
 tensorData<bool> t4
+ 
+let rawProbs = [|0.2564102411f; 0.2564102411f; 0.2564102411f; -0.2564102411f;
+                  -0.2564102411f; -0.2564102411f; 0.2564102411f; -0.2564102411f;
+                  0.2564102411f; 0.2564102411f; -0.2564102411f; -0.2564102411f;
+                  0.2564102411f; 0.2564102411f; -0.2564102411f; 0.2564102411f;
+                  0.2564102411f; -0.2564102411f; 0.2564102411f; 0.2564102411f;
+                  0.2564102411f; 0.2564102411f; 0.2564102411f; 0.2564102411f|];
+rawProbs |> Array.iter (mapProb>>(printf "%s"))
+rawProbs.Length
+
+
+let taS  =   [|100s; 100s; 100s; 101s; 101s; 101s; 100s; 101s; 100s; 100s; 101s; 101s; 100s; 100s; 101s; 100s; 100s; 101s; 100s; 100s; 100s; 100s; 100s; 100s|]
+//let act = taS |> Array.map (fun x -> if x > 100s then 1s else 0s)
+let inp1 =  [|0s; 1s; 1s; 0s; 0s; 0s; 0s; 1s; 1s; 1s; 1s; 0s; 1s; 0s; 0s; 1s; 1s; 1s; 1s; 0s; 0s; 0s; 0s; 1s|]
+let act  =  [|0s; 0s; 0s; 1s; 1s; 1s; 0s; 1s; 0s; 0s; 1s; 1s; 0s; 0s; 1s; 0s; 0s; 1s; 0s; 0s; 0s; 0s; 0s; 0s|]
+let clsout = 0
+let y = 0
+let w = 0
+let prob = [|``1/s``; ``1/s``; ``1/s``; -``1/s``; -``1/s``; -``1/s``; ``1/s``; -``1/s``; ``1/s``; ``1/s``; -``1/s``; -``1/s``; ``1/s``; ``1/s``; -``1/s``; ``1/s``; ``1/s``; -``1/s``; ``1/s``; ``1/s``; ``1/s``; ``1/s``; ``1/s``; ``1/s``|]
+
 
 *)

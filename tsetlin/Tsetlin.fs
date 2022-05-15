@@ -46,11 +46,13 @@ module Utils =
         let rdims =
             t.shape 
             |> Array.map int 
-            |> Array.rev
+            |> Array.rev            //start with inner most dimension
             |> Array.toList
         let rec loop ds (xs:D<'a>) =
             match ds,xs with
-            | [],_         -> xs
+            | [],_                        -> xs
+            | d::[],T ds when d=ds.Length -> T ds
+            | d::[],F ds when d=ds.Length -> F ds
             | d::rest,T ds -> loop rest (ds |> Array.chunkBySize d |> Array.map T |> T)
             | d::rest,F ds -> loop rest (ds |> Array.chunkBySize d |> Array.map F |> T)
         loop rdims (F ts)

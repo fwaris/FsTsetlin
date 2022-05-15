@@ -75,6 +75,7 @@ let run() =
     let X1,y1 = [|trainData |> Seq.head|] |> toTensor tm.Invariates.Config
 
     let taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss = Train.trainStepDbg tm.Invariates tm.Clauses (X1.squeeze(),y1.squeeze())
+    Utils.tensorData<int16> taEvals
 
     ()
     //train 6

@@ -72,13 +72,14 @@ let train epochs =
             y.Dispose())
 
 let run() = 
-    let X1,y1 = [|trainData |> Seq.head|] |> toTensor tm.Invariates.Config
+    //let X1,y1 = [|trainData |> Seq.head|] |> toTensor tm.Invariates.Config
 
-    let taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss = Train.trainStepDbg tm.Invariates tm.Clauses (X1.squeeze(),y1.squeeze())
-    Utils.tensorData<int16> taEvals
+    //let taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss = Train.trainStepDbg tm.Invariates tm.Clauses (X1.squeeze(),y1.squeeze())
+    //Utils.tensorData<int16> taEvals
 
-    ()
-    //train 6
+    //()
+    train 6
+    eval()
     ;;
     //let acc = eval()
     //printfn "%f" acc

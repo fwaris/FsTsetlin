@@ -52,7 +52,7 @@ let cfg =
 let tm = TM.create cfg
 
 let eval() =
-    trainData
+    testData
     |> Seq.chunkBySize 1000
     |> Seq.map (toTensor tm.Invariates.Config)
     |> Seq.collect (fun (X,y) -> 
@@ -75,7 +75,7 @@ let train epochs =
         showClauses tm.Invariates tm.Clauses
         
 
-let tX1,ty1 = [|trainData |> Seq.head|] |> toTensor tm.Invariates.Config
+let tX1,ty1 = [|trainData |> Seq.item 3|] |> toTensor tm.Invariates.Config
 let X1=tX1.squeeze()
 let y1=ty1.squeeze()
 
@@ -111,13 +111,26 @@ let printClause i =
     let clsout = match clauseEvals with Utils.F xs -> xs.[i]
     let y = match ty with Utils.F xs -> xs.[0]
     let w = match polarity with Utils.T ds -> match ds.[i] with Utils.F xs -> xs.[0]
+    let fb = match feeback with Utils.T ds -> match ds.[i] with Utils.F xs -> xs
+    let fbid = match fbIncrDecr with Utils.T ds -> match ds.[i] with Utils.F xs -> xs
+    let clssA = match clss with Utils.T ds -> match ds.[i] with Utils.F xs -> xs
+    let updClssA = match updClss with Utils.T ds -> match ds.[i] with Utils.F xs -> xs
 
-    Array.zip3 act prob inp1
-    |> Array.iter (fun (a,p,l) -> printfn $"C:{clsout}, y:{y}, w:{w}, L:{l}, act:{(if a = 0s then 'i' else 'x')}, pReward: {mapProb p}" )
+    for j in 0 .. act.Length-1 do
+        let a = act.[j]
+        let p = prob.[j]
+        let l = inp1.[j]
+        let fb = fb.[j]
+        let incDec = fbid.[j]
+        printfn $"C:{clsout}, y:{y}, w:{w}, L:{l}, act:{(if a = 0s then 'i' else 'x')}, pReward: {mapProb p}, fb: {fb}, incr/decr: {incDec}, clssIn:{clssA.[j]}, clssOut:{updClssA.[j]}"
 
 printClause 0
 printClause 1
+printClause 2
+printClause 3
+printClause 4
 
+let print
 
 (*
 #time

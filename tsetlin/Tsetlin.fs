@@ -65,9 +65,12 @@ module Eval =
         use filter   = clauses.greater(invrts.MidState)                                     //determine 'include'/'exclude' actions
         let taOutput = torch.where(filter,input2,invrts.Ones)                               //take input if action = include else 1 (which skips excluded input when and'ing)
         if not trainMode then   
-            use alExs = filter.any(1L,keepDim=true)                                         //true if all actions are 'exclude' for a clause
-            if alExs.any().ToBoolean() then
-                let adjOutput = torch.where(alExs,invrts.Zeros,taOutput)
+            use oneInc = filter.any(1L,keepDim=true)                                         //true if there is at least 1 'include' per clause
+            //let TFilter = Utils.tensorData<bool> (filter.cpu())
+            //let TalExs = Utils.tensorData<bool> (oneInc.cpu())
+            //let TtaOutput = Utils.tensorData<int16> (taOutput.cpu())
+            if oneInc.any().ToBoolean() then
+                let adjOutput = torch.where(oneInc,taOutput,invrts.Zeros)
                 taOutput.Dispose()
                 adjOutput
             else
@@ -101,12 +104,18 @@ module Train =
     let taFeeback invrts (v:torch.Tensor) (pReward:torch.Tensor) (y:torch.Tensor) =
         use selY1 = (invrts.TPlus - v.clamp(invrts.TMinus,invrts.TPlus)) / invrts.T2  //feedback selection prob. when y=1
         use selY0 = (invrts.TPlus + v.clamp(invrts.TMinus,invrts.TPlus)) / invrts.T2  //feedback selection prob. when y=0 
+        //let Tvote = v.ToDouble()
+        //let Ty1 = selY1.ToDouble()
+        //let Ty0 = selY0.ToDouble()
+        //let Trwd = Utils.tensorData<float32> pReward
         use uRand = torch.rand_like(pReward)              //tensor of uniform random values for Feedback selection
         use feebackFilter =                               //bool tensor; true if random <= [selY0 or selY1] (based on the value of y )
             if y.ToSingle() <= 0.f then 
                 uRand.less_equal(selY0) 
             else 
-                uRand.less_equal(selY1)                      
+                uRand.less_equal(selY1)      
+        //let TuRand = Utils.tensorData<float32> uRand
+        //let TfeebackFilter = Utils.tensorData<bool> feebackFilter
         use zeros = torch.zeros_like(pReward)                   //zero filled tensor - same shape as reward probabilities
         use pRewardSel = pReward.where(feebackFilter,zeros)     //keep reward prob if filter tensor value is true, zero otherwise
         use negRewards = pRewardSel.minimum(zeros)          //separate out negative reward prob.
@@ -119,7 +128,10 @@ module Train =
         use minusOnes = invrts.MinusOnes.reshape(pReward.shape)
         use negFeedback = minusOnes.where(negRwdFltr,zeros)
         use posFeedback = ones.where(posRwdFltr,zeros)
-        negFeedback + posFeedback                                   //final feedback tensor with -1, +1 or 0 values 
+        let fb = negFeedback + posFeedback                      //final feedback tensor with -1, +1 or 0 values 
+        //let Tfbt = Utils.tensorData<int16> fb
+        fb
+        //negFeedback + posFeedback                                   
 
     ///calculate feedback incr/decr values based on selected feedback reward(+)/penalty(-)/ignore(0) and TA state
     let feedbackIncrDecr invrts (clauses:torch.Tensor) (feedback:torch.Tensor) =

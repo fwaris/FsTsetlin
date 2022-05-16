@@ -1,34 +1,41 @@
 ﻿#load "packages.fsx"
-
+open FsTsetlin
 open TorchSharp
-let src = 
-    [|
-        //polarity, literal, action 
-        (* 0,0,0 *)  1.f
-        (* 0,0,1 *)  2.f
-        (* 0,1,0 *)  3.f
-        (* 0,1,1 *)  4.f
-        (* 1,0,0 *)  5.f
-        (* 1,0,1 *)  6.f
-        (* 1,1,0 *)  7.f
-        (* 1,1,1 *)  8.f
-    |]
-let tsrc = torch.tensor(src,dimensions=[|2L;2L;2L|])
-let i_polarity = torch.tensor([|0L;1L|])
-let i_literal  = torch.tensor([|0L;1L|])
-let i_action   = torch.tensor([|0L;1L|])
-let t = tsrc.index([|i_polarity;i_literal;i_action|])
-t.data<float32>().ToArray()
 
-let t2 = FsTsetlin.Utils.tensorData<float32> tsrc
+let numClasses = 3
+let clausesPerClss = 5
+
+let cl1 = torch.ones(2L * int64 numClasses * int64 clausesPerClss)
+Utils.tensorData<float32> cl1
+
+let cl2 = cl1.reshape(2L * int64 numClasses, -1L)
+
+let cl3 = cl2.sum(1L)
+Utils.tensorData<float32> cl3
+
+let i = cl3.argmax()
+i.ToInt64()
+
+//clauses for i are treated as y = 1
+//find random class (not i) and treat it as y = 0
+
+(*
+c0 - 0
+c0 + 0
+c0 - 1
+c0 + 1
+...
+c0 - 4
+c0 + 4
+
+c1 - 0
+c1 + 0
+c2 - 0
+c2 + 0
+...
+*)
 
 
-let rng = System.Random()
-let x = rng.NextDouble()
-let mv = System.Double.MaxValue
-let j = x / mv
 
-let target = 15.
-let t1 = (2.* target) - 1.0
-let j = 3
-let jsgn = 1 - 2 * (j &&& 1)
+
+

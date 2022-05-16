@@ -4,13 +4,14 @@ open System
 
 type Config = 
     {
-        s           : float32
-        T           : float32
-        TAStates    : int
-        dtype       : torch.ScalarType
-        Device      : torch.Device
-        Clauses     : int
-        InputSize   : int
+        s                   : float32
+        T                   : float32
+        TAStates            : int
+        dtype               : torch.ScalarType
+        Device              : torch.Device
+        ClausesPerClass     : int
+        InputSize           : int
+        Classes             : int // 2 or more
     }
 
 /// cache invariates for optimization
@@ -29,6 +30,8 @@ type Invariates =
         TPlus           : torch.Tensor
         TMinus          : torch.Tensor
         T2              : torch.Tensor
+        Y1              : torch.Tensor
+        Y0              : torch.Tensor
     }
 
 type TM =
@@ -65,10 +68,7 @@ module Eval =
         use filter   = clauses.greater(invrts.MidState)                                     //determine 'include'/'exclude' actions
         let taOutput = torch.where(filter,input2,invrts.Ones)                               //take input if action = include else 1 (which skips excluded input when and'ing)
         if not trainMode then   
-            use oneInc = filter.any(1L,keepDim=true)                                         //true if there is at least 1 'include' per clause
-            //let TFilter = Utils.tensorData<bool> (filter.cpu())
-            //let TalExs = Utils.tensorData<bool> (oneInc.cpu())
-            //let TtaOutput = Utils.tensorData<int16> (taOutput.cpu())
+            use oneInc = filter.any(1L,keepDim=true)                                        //true if there is at least 1 'include' per clause
             if oneInc.any().ToBoolean() then
                 let adjOutput = torch.where(oneInc,taOutput,invrts.Zeros)
                 taOutput.Dispose()
@@ -88,6 +88,12 @@ module Eval =
         use withPlry = clauseEvals.mul(invrts.PolaritySign)
         withPlry.sum().to_type(torch.float32)
 
+    ///sum positive and negative polarity clause outputs per class 
+    let sumClausesMulticlass invrts (clauseEvals:torch.Tensor) =
+        use withPlry = clauseEvals.mul(invrts.PolaritySign)
+        use byClass = withPlry.reshape( int64 (2 * invrts.Config.Classes), -1L )
+        byClass.sum(1L)
+
 module Train = 
     ///obtain +/- reward probabilities for each TA (for type I and II feedback)
     let rewardProb invrts (clauses:torch.Tensor) (clauseEvals:torch.Tensor) (X:torch.Tensor,y:torch.Tensor) =
@@ -98,24 +104,24 @@ module Train =
         use action_f = torch.where(filter,invrts.Ones,invrts.Zeros).reshape([|1L;-1L|]).to_type(torch.int64)
         use cw_f = torch.hstack(ResizeArray[for _ in 1 .. int X.shape.[0] -> ce_t]).reshape([|1L;-1L|]).to_type(torch.int64)
         use y_f = y.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
+        let plrtyIdx = 
+            if invrts.Config.Classes > 2 then                 
+                let slice = torch.TensorIndex.Slice(start=0L, stop=clauses.shape.[0])
+                invrts.PolarityIndex.[ slice ]
+            else 
+                invrts.PolarityIndex
         invrts.PayoutMatrix.index([|invrts.PolarityIndex; literal_f; action_f; cw_f; y_f|])
 
     ///postive, negative or no feedback for each TA
     let taFeeback invrts (v:torch.Tensor) (pReward:torch.Tensor) (y:torch.Tensor) =
         use selY1 = (invrts.TPlus - v.clamp(invrts.TMinus,invrts.TPlus)) / invrts.T2  //feedback selection prob. when y=1
         use selY0 = (invrts.TPlus + v.clamp(invrts.TMinus,invrts.TPlus)) / invrts.T2  //feedback selection prob. when y=0 
-        //let Tvote = v.ToDouble()
-        //let Ty1 = selY1.ToDouble()
-        //let Ty0 = selY0.ToDouble()
-        //let Trwd = Utils.tensorData<float32> pReward
         use uRand = torch.rand_like(pReward)              //tensor of uniform random values for Feedback selection
         use feebackFilter =                               //bool tensor; true if random <= [selY0 or selY1] (based on the value of y )
             if y.ToSingle() <= 0.f then 
                 uRand.less_equal(selY0) 
             else 
                 uRand.less_equal(selY1)      
-        //let TuRand = Utils.tensorData<float32> uRand
-        //let TfeebackFilter = Utils.tensorData<bool> feebackFilter
         use zeros = torch.zeros_like(pReward)                   //zero filled tensor - same shape as reward probabilities
         use pRewardSel = pReward.where(feebackFilter,zeros)     //keep reward prob if filter tensor value is true, zero otherwise
         use negRewards = pRewardSel.minimum(zeros)          //separate out negative reward prob.
@@ -129,9 +135,7 @@ module Train =
         use negFeedback = minusOnes.where(negRwdFltr,zeros)
         use posFeedback = ones.where(posRwdFltr,zeros)
         let fb = negFeedback + posFeedback                      //final feedback tensor with -1, +1 or 0 values 
-        //let Tfbt = Utils.tensorData<int16> fb
         fb
-        //negFeedback + posFeedback                                   
 
     ///calculate feedback incr/decr values based on selected feedback reward(+)/penalty(-)/ignore(0) and TA state
     let feedbackIncrDecr invrts (clauses:torch.Tensor) (feedback:torch.Tensor) =
@@ -150,6 +154,39 @@ module Train =
     let updateClauses invrts (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
         let clss = clauses.add(incrDecr)
         clss.clamp_(invrts.LowState,invrts.HighState)
+
+    ///update the clauses for a single class - used in multi-class scenario
+    let updateClass invrts clauses clauseEvals v (X,y) = 
+        use pReward = rewardProb invrts clauses clauseEvals (X,y)
+        use feedback = taFeeback invrts v pReward y
+        use fbIncrDecr = feedbackIncrDecr invrts clauses feedback 
+        updateClauses_ invrts clauses fbIncrDecr |> ignore
+
+    ///update clauses on single input - optimized for producton
+    let trainStepMulticlass invrts clauses (X,y:torch.Tensor) = 
+        use taEvals = Eval.evalTA invrts true clauses X //num_clauses * input
+        use clauseEvals = Eval.andClause invrts taEvals
+        use byClassSum = Eval.sumClausesMulticlass invrts clauseEvals
+        let idx1 = y.ToInt64()
+        let remClss = [|for i in 0L .. int64 (invrts.Config.Classes - 1) do if i <> idx1 then yield i |] 
+        use tRemClss = torch.tensor(remClss,dtype=torch.int64,device=invrts.Config.Device)
+        use notYIdx = torch.randint(int tRemClss.shape.[0],[|1|],dtype=torch.int64,device=invrts.Config.Device)
+        let notY = tRemClss.[notYIdx]
+        let chunkedClauses = clauses.chunk(int64 invrts.Config.Classes)
+        let chunkedEvals   = clauseEvals.chunk(int64 invrts.Config.Classes)
+        //when class = y
+        use v1Clauses = chunkedClauses.[y.ToInt32()]
+        use v1Evals   = chunkedEvals.[y.ToInt32()]
+        let v1        = byClassSum.[y]
+        updateClass invrts v1Clauses v1Evals v1 (X,invrts.Y1)
+        //when class not y (randomly chosen)
+        use v0Clauses = chunkedClauses.[notY.ToInt32()]
+        use v0Evals   = chunkedEvals.[notY.ToInt32()]
+        let v0        = byClassSum.[notY]
+        updateClass invrts v0Clauses v0Evals v0 (X,invrts.Y0)
+        //dispose chunked views
+        chunkedClauses |> Array.iter (fun x -> x.Dispose())
+        chunkedEvals   |> Array.iter (fun x -> x.Dispose())
 
     ///update clauses on single input - optimized for producton
     let trainStep invrts clauses (X,y) = 
@@ -216,12 +253,15 @@ module TM =
         |]
 
     let create (cfg:Config) =
+        if cfg.ClausesPerClass % 2 <> 0 then failwithf "clauses per class should be an even number (for negative/positive polarity)"
         let rng = System.Random()
-        let numTAs = cfg.Clauses * (cfg.InputSize * 2)
-        let initialState = [|for i in 0..numTAs-1 -> if rng.NextDouble() < 0.5 then cfg.TAStates else cfg.TAStates+1|]
-        let plrtyBin = [|for i in 0 .. cfg.Clauses-1 -> i % 2|]
-        let plrtySgn = [|for i in 0 .. cfg.Clauses-1 -> if i%2 = 0 then -1 else 1|]           
-        let clauses = torch.tensor(initialState, dtype=cfg.dtype, dimensions = [|int64 cfg.Clauses; cfg.InputSize * 2 |> int64|], device=cfg.Device)
+
+        let numTAs = cfg.Classes * cfg.ClausesPerClass * (cfg.InputSize * 2)
+        let numClauses = cfg.Classes * cfg.ClausesPerClass
+        let initialState = [|for i in 1..numTAs -> if rng.NextDouble() < 0.5 then cfg.TAStates else cfg.TAStates+1|]
+        let plrtyBin = [|for i in 1..numClauses -> i % 2|]
+        let plrtySgn = [|for i in 1..numClauses -> if i%2 = 0 then -1 else 1|]  
+        let clauses = torch.tensor(initialState, dtype=cfg.dtype, dimensions = [|int64 (cfg.Classes * cfg.ClausesPerClass); int64 (cfg.InputSize * 2) |], device=cfg.Device)
         let polarity = torch.tensor(plrtyBin, dtype=cfg.dtype, device=cfg.Device, dimensions=[|clauses.shape.[0]; 1L|])
         let polarityIdx = polarity.expand_as(clauses).reshape([|1L;-1L|]).to_type(torch.int64)
         let tPlus = torch.tensor(cfg.T, device=cfg.Device)
@@ -243,6 +283,8 @@ module TM =
                 TPlus           = tPlus
                 TMinus          = tMinus
                 T2              = t2
+                Y1              = 1L.ToTensor(device=cfg.Device)
+                Y0              = 0L.ToTensor(device=cfg.Device)
             }
         {
             Clauses     = clauses
@@ -260,8 +302,13 @@ module TM =
     let eval X (tm:TM) =
         use taEvals = Eval.evalTA tm.Invariates false tm.Clauses X //num_clauses * input
         use clauseEvals = Eval.andClause tm.Invariates taEvals
-        use v = Eval.sumClauses tm.Invariates clauseEvals
-        if v.ToSingle() > 0.f then 1 else 0
+        if tm.Invariates.Config.Classes > 2 then
+            use byClassSum = Eval.sumClausesMulticlass tm.Invariates clauseEvals
+            use idx = byClassSum.argmax()
+            idx.ToInt32()
+        else
+            use v = Eval.sumClauses tm.Invariates clauseEvals
+            if v.ToSingle() > 0.f then 1 else 0
 
     let evalBatch (X:torch.Tensor) (tm:TM) =
         let batchSze = X.shape.[0]

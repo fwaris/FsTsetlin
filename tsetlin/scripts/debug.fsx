@@ -47,6 +47,7 @@ let cfg =
         dtype       = torch.int16
         Device      = device
         InputSize   = 12
+        Classes     = 2
     }
 
 let tm = TM.create cfg

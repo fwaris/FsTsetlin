@@ -42,10 +42,11 @@ let cfg =
         s           = 3.9f
         T           = 15.0f
         TAStates    = 100
-        Clauses     = 20
+        ClausesPerClass     = 20
         dtype       = torch.int16
         Device      = device
         InputSize   = 12
+        Classes     = 2
     }
 
 let tm = TM.create cfg

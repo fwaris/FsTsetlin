@@ -25,7 +25,6 @@ let showClauses (tm:TM) =
     taStates tm
     |> Array.iteri (fun i x -> printfn "%d %A" i x)    
 
-
 let trainData = loadData trainDataFile
 let testData = loadData testDataFile
 
@@ -43,10 +42,11 @@ let cfg =
         s           = 3.9f
         T           = 15.0f
         TAStates    = 100
-        Clauses     = 20
         dtype       = torch.int32
         Device      = device
         InputSize   = 12
+        ClausesPerClass = 10
+        Classes         = 2
     }
 
 let tm = TM.create cfg
@@ -98,7 +98,7 @@ let train epochs =
             TM.trainBatch (X,y) tm
             X.Dispose()
             y.Dispose())
-        printfn $"{i}"//: {eval()}"
+        printfn $"{i}: {eval()}"
 
 #time
 

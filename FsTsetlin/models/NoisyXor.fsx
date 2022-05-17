@@ -28,7 +28,7 @@ let showClauses (tm:TM) =
 let trainData = loadData trainDataFile
 let testData = loadData testDataFile
 
-let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
+let device = torch.CPU// if torch.cuda.is_available() then torch.CUDA else torch.CPU
 printfn $"cuda: {torch.cuda.is_available()}"
 
 let toTensor cfg (batch:(int[]*int)[]) =
@@ -62,33 +62,6 @@ let eval() =
     |> Seq.map (fun (y',y) -> if y' = y then 1.0 else 0.0)
     |> Seq.average
 
-let evalVotes() =
-    testData
-    |> Seq.chunkBySize 1000
-    |> Seq.map (toTensor tm.Invariates.Config)
-    |> Seq.collect (fun (X,y) -> 
-        [for i in 0L .. X.shape.[0] - 1L do
-            yield TM.eval X.[i] tm, y.[i].ToInt32()
-        ])
-    |> Seq.filter (fun (a,b) -> a = 1)
-    |> Seq.toArray
-    
-let eval1s() =
-    let (Xs,ys) =
-        testData
-        |> Seq.filter (fun (a,b) -> b=1)
-        |> Seq.chunkBySize(5)
-        |> Seq.map (toTensor tm.Invariates.Config)
-        |> Seq.head
-    [for i in 0L .. Xs.shape.[0] - 1L do
-        let x = Xs.[i]
-        let tas = Eval.evalTA tm.Invariates true tm.Clauses x
-        let vs = Eval.andClause tm.Invariates tas
-        let sm = Eval.sumClauses tm.Invariates vs
-        let Ttas = Utils.tensorData<int32> (tas.cpu())
-        sm.ToDouble()
-        ]
-
 let train epochs =
     for i in 1 .. epochs do
         trainData
@@ -102,7 +75,7 @@ let train epochs =
 
 #time
 
-train 200
+train 10
 ;;
 
 

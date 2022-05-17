@@ -3,10 +3,12 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net6.0</TargetFramework>
+	  <LangVersion>preview</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="Xor.fs" />
+    <Compile Include="Multiclass.fs" />
     <Compile Include="TensorTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

@@ -1,5 +1,5 @@
 ﻿module Pgm
 
-Xor.run()
-
+//Xor.run()
+Multiclass.run()
 //TensorTests.run()

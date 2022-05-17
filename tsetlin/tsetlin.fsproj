@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="models\BinaryIris.fsx" />
     <None Include="models\NoisyXor.fsx" />
     <None Include="notebooks\tm_notebook.ipynb" />
     <Content Include="notebooks\tm_notebook.dib" />

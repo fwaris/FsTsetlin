@@ -70,6 +70,7 @@ module Eval =
         use input2   = input.broadcast_to(clauses.shape)                                    //make input the same shape as clauses
         use filter   = clauses.greater(invrts.MidState)                                     //determine 'include'/'exclude' actions
         let taOutput = torch.where(filter,input2,invrts.Ones)                               //take input if action = include else 1 (which skips excluded input when and'ing)
+        let T_taOutput = Utils.tensorData<int32> taOutput
         if not trainMode then   
             use oneInc = filter.any(1L,keepDim=true)                                        //true if there is at least 1 'include' per clause
             if oneInc.any().ToBoolean() then
@@ -95,7 +96,13 @@ module Eval =
     let sumClausesMulticlass invrts (clauseEvals:torch.Tensor) =
         use withPlry = clauseEvals.mul(invrts.PolaritySign)
         use byClass = withPlry.reshape( int64 invrts.Config.Classes, -1L )
-        byClass.sum(1L, ``type``= torch.float32)
+        let byCSum = byClass.sum(1L, ``type``= torch.float32)
+        let T_clauseEvals = Utils.tensorData<int32> clauseEvals
+        let T_polaritySign = Utils.tensorData<int32> invrts.PolaritySign
+        let T_byClass = Utils.tensorData<int32> byClass
+        let T_byCSum = Utils.tensorData<float32> byCSum
+        byCSum
+
 
 module Train = 
     ///obtain +/- reward probabilities for each TA (for type I and II feedback)
@@ -141,8 +148,13 @@ module Train =
         use filterLessEqual = clauses.less_equal(invrts.MidState)
         use highs = torch.where(filterGreater,invrts.ClassOnes,invrts.ClassZeros)
         use lows = torch.where(filterLessEqual,invrts.ClassMinusOnes,invrts.ClassZeros)
+        let T_ClassZeros = Utils.tensorData<int32> invrts.ClassZeros
         use feedbackPolarity = highs + lows
-        feedbackPolarity.mul(feedback.reshape(clauses.shape))
+        let T_feedbackPolarity = Utils.tensorData<int32> feedbackPolarity
+        let T_feeback = Utils.tensorData<int32> (feedback.reshape(clauses.shape))
+        let fb = feedbackPolarity.mul(feedback.reshape(clauses.shape))
+        let T_fb = Utils.tensorData<int32> fb
+        fb
 
     ///inplace update clauses
     let updateClauses_ invrts (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
@@ -158,12 +170,24 @@ module Train =
         use pReward = rewardProb invrts clauses clauseEvals (X,y)
         use feedback = taFeeback invrts v pReward y
         use fbIncrDecr = feedbackIncrDecr invrts clauses feedback 
+        let T_y = y.ToSingle()
+        let T_v = v.ToSingle()
+        let T_clauses = Utils.tensorData<int32> clauses
+        let T_clauseEvals = Utils.tensorData<int32> clauseEvals
+        let T_pReward = Utils.tensorData<float32> (pReward.reshape(clauses.shape))
+        let T_feedback = Utils.tensorData<int32> (feedback.reshape(clauses.shape))
+        let T_fbIncDecr = Utils.tensorData<int32> fbIncrDecr
         updateClauses_ invrts clauses fbIncrDecr |> ignore
+        let T_clauses2 = Utils.tensorData<int32> clauses
+        ()
 
     ///update clauses on single input - optimized for producton
     let trainStepMulticlass invrts clauses (X,y:torch.Tensor) = 
         use taEvals = Eval.evalTA invrts true clauses X //num_clauses * input
         use clauseEvals = Eval.andClause invrts taEvals
+        let T_X = Utils.tensorData<int32> X
+        let T_taEvals = Utils.tensorData<int32> taEvals
+        let T_clauseEvals = Utils.tensorData<int32> clauseEvals
         use byClassSum = Eval.sumClausesMulticlass invrts clauseEvals
         let idx1 = y.ToInt64()
         let remClss = [|for i in 0L .. int64 (invrts.Config.Classes - 1) do if i <> idx1 then yield i |] 
@@ -172,16 +196,19 @@ module Train =
         let notY = tRemClss.[notYIdx]
         let chunkedClauses = clauses.chunk(int64 invrts.Config.Classes)
         let chunkedEvals   = clauseEvals.chunk(int64 invrts.Config.Classes)
+        let T_clausesBefore = Utils.tensorData<int32> clauses 
         //when class = y
         use v1Clauses = chunkedClauses.[y.ToInt32()]
         use v1Evals   = chunkedEvals.[y.ToInt32()]
         let v1        = byClassSum.[y]
         updateClass invrts v1Clauses v1Evals v1 (X,invrts.Y1)
+        let T_clausesAfter = Utils.tensorData<int32> clauses 
+
         //when class not y (randomly chosen)
         use v0Clauses = chunkedClauses.[notY.ToInt32()]
         use v0Evals   = chunkedEvals.[notY.ToInt32()]
         let v0        = byClassSum.[notY]
-        updateClass invrts v0Clauses v0Evals v0 (X,invrts.Y0)
+        updateClass invrts v0Clauses v0Evals v0 (X,invrts.Y0)        
         //dispose chunked views
         chunkedClauses |> Array.iter (fun x -> x.Dispose())
         chunkedEvals   |> Array.iter (fun x -> x.Dispose())
@@ -257,9 +284,9 @@ module TM =
         let numTAs = cfg.Classes * cfg.ClausesPerClass * (cfg.InputSize * 2)
         let initialState = [|for i in 1..numTAs -> if rng.NextDouble() < 0.5 then cfg.TAStates else cfg.TAStates+1|]
         let clauses = torch.tensor(initialState, dtype=cfg.dtype, dimensions = [|int64 (cfg.Classes * cfg.ClausesPerClass); int64 (cfg.InputSize * 2) |], device=cfg.Device)
-        let plrtySgn = [|for i in 1.. (cfg.Classes * cfg.ClausesPerClass) -> if i % 2 = 0 then -1 else 1|]  //polarity sign +1/-1; used for summing clause evaluation
+        let plrtySgn = [|for i in 1 .. (cfg.Classes * cfg.ClausesPerClass) -> if i % 2 = 0 then -1 else 1|]  //polarity sign +1/-1; used for summing clause evaluation
         let numClauses = if isBinary then cfg.Classes * cfg.ClausesPerClass else cfg.ClausesPerClass
-        let plrtyBin = [|for i in 1..numClauses -> i % 2|]                                                  //polarity index 1/0; used for indexing into the payout matrix
+        let plrtyBin = [|for i in 1 .. numClauses -> i % 2|]                                                  //polarity index 1/0; used for indexing into the payout matrix
         let polarityIdx = 
             if isBinary then
                 let polarity = torch.tensor(plrtyBin, dtype=torch.int64, device=cfg.Device, dimensions=[|clauses.shape.[0]; 1L|])
@@ -271,8 +298,8 @@ module TM =
         let tPlus = torch.tensor(cfg.T, device=cfg.Device)
         let tMinus = torch.tensor(-cfg.T, device=cfg.Device)
         let t2 = torch.tensor(2.0f * cfg.T,device=cfg.Device)
-        let ones  = torch.zeros_like(clauses)
-        let zeros = torch.ones_like(clauses)
+        let ones  = torch.ones_like(clauses)
+        let zeros = torch.zeros_like(clauses)
         let cache =
             {
                 PolarityIndex   = polarityIdx

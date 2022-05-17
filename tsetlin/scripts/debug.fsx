@@ -43,11 +43,11 @@ let cfg =
         s           = 3.9f
         T           = 15.0f
         TAStates    = 100
-        Clauses     = 5
-        dtype       = torch.int16
+        dtype       = torch.int32
         Device      = device
         InputSize   = 12
-        Classes     = 2
+        ClausesPerClass = 4
+        Classes         = 2
     }
 
 let tm = TM.create cfg
@@ -95,15 +95,15 @@ let mapProb x =
 
 let printClause i =
     // let i = 1
-    let tas         = Utils.tensorData<int16> taEvals
-    let clauseEvals = Utils.tensorData<int16> clauseEvals
-    let input       = Utils.tensorData<int16> X1
-    let ty          = Utils.tensorData<int16> y1
+    let tas         = Utils.tensorData<int> taEvals
+    let clauseEvals = Utils.tensorData<int> clauseEvals
+    let input       = Utils.tensorData<int> X1
+    let ty          = Utils.tensorData<int> y1
     let rewards     = Utils.tensorData<float32> (pReward.reshape(tm.Clauses.shape))
-    let feeback     = Utils.tensorData<int16> (feedback.reshape(tm.Clauses.shape))
-    let clss        = Utils.tensorData<int16> tm.Clauses
-    let fbIncrDecr  = Utils.tensorData<int16> fbIncrDecr
-    let updClss     = Utils.tensorData<int16> updtClss
+    let feeback     = Utils.tensorData<int> (feedback.reshape(tm.Clauses.shape))
+    let clss        = Utils.tensorData<int> tm.Clauses
+    let fbIncrDecr  = Utils.tensorData<int> fbIncrDecr
+    let updClss     = Utils.tensorData<int> updtClss
     let polarity    = Utils.tensorData<int64> (tm.Invariates.PolarityIndex.reshape(tm.Clauses.shape))
 
     let act = match tas with Utils.T (ds) -> match ds.[i] with Utils.F xs -> xs 
@@ -123,15 +123,13 @@ let printClause i =
         let l = inp1.[j]
         let fb = fb.[j]
         let incDec = fbid.[j]
-        printfn $"C:{clsout}, y:{y}, w:{w}, L:{l}, act:{(if a = 0s then 'i' else 'x')}, pReward: {mapProb p}, fb: {fb}, incr/decr: {incDec}, clssIn:{clssA.[j]}, clssOut:{updClssA.[j]}"
+        printfn $"C:{clsout}, y:{y}, w:{w}, L:{l}, act:{(if a = 0 then 'i' else 'x')}, pReward: {mapProb p}, fb: {fb}, incr/decr: {incDec}, clssIn:{clssA.[j]}, clssOut:{updClssA.[j]}"
 
 printClause 0
 printClause 1
 printClause 2
 printClause 3
-printClause 4
 
-let print
 
 (*
 #time

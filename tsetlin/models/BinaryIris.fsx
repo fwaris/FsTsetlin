@@ -11,9 +11,9 @@ let loadData (path:string) =
     |> Seq.map (fun l -> l.Split())
     |> Seq.map (fun xs -> xs |> Array.map int)
     |> Seq.map (fun xs -> 
-        let x1 = xs.[0..^2]
+        let x1 = xs.[0..^1]
         let X = Array.append x1 (x1 |> Array.map (function 1 -> 0 | 0 -> 1 | _ -> failwith "only 0 1 expected")) //with negated values
-        let y = xs[^1]
+        let y = xs[^0]
         X,y)
 
 let taStates (tm:TM) =
@@ -50,6 +50,8 @@ let cfg =
 
 let tm = TM.create cfg
 
+trainData |> Seq.last
+
 let eval() =
     trainData
     |> Seq.chunkBySize 1000
@@ -58,7 +60,9 @@ let eval() =
         [for i in 0L .. X.shape.[0] - 1L do
             yield TM.eval X.[i] tm, y.[i].ToInt32()
         ])
+    //|> Seq.map snd |> Seq.countBy (fun x->x) |> Seq.toArray
     |> Seq.map (fun (y',y) -> if y' = y then 1.0 else 0.0)
+    //|> Seq.toArray |> Array.distinct
     |> Seq.average
 
 let train epochs =
@@ -74,7 +78,7 @@ let train epochs =
 
 #time
 
-train 1
+train 10
 ;;
 
 

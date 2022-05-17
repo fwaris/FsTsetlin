@@ -1,4 +1,4 @@
-module tsetlinTest
+module FsTsetlinTest
 
 open NUnit.Framework
 open TorchSharp

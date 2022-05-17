@@ -3,11 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.1.32328.378
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "tsetlin", "tsetlin\tsetlin.fsproj", "{5A9E178A-9834-49FC-B1B6-F74C0D101E96}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "FsTsetlin", "FsTsetlin\FsTsetlin.fsproj", "{5A9E178A-9834-49FC-B1B6-F74C0D101E96}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "tsetlinTest", "tsetlinTest\tsetlinTest.fsproj", "{D6D7D93B-2ADD-491A-ACA6-40545BFB29EA}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "FsTsetlinTest", "FsTsetlinTest\FsTsetlinTest.fsproj", "{D6D7D93B-2ADD-491A-ACA6-40545BFB29EA}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsTestlinDebug", "FsTestlinDebug\FsTestlinDebug.fsproj", "{A2E9B884-CA24-4B08-AC8D-CFFBDD0F4C2F}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "FsTestlinDebug", "FsTestlinDebug\FsTestlinDebug.fsproj", "{A2E9B884-CA24-4B08-AC8D-CFFBDD0F4C2F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

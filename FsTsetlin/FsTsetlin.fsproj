@@ -8,13 +8,10 @@
   <ItemGroup>
     <None Include="models\BinaryIris.fsx" />
     <None Include="models\NoisyXor.fsx" />
-    <None Include="notebooks\tm_notebook.ipynb" />
-    <Content Include="notebooks\tm_notebook.dib" />
-    <Content Include="scripts\feedback_tables.txt" />
     <None Include="scripts\packages.fsx" />
     <None Include="scripts\sandbox.fsx" />
     <None Include="scripts\debug.fsx" />
-    <Compile Include="Tsetlin.fs" />
+    <Compile Include="FsTsetlin.fs" />
   </ItemGroup>
 
   <ItemGroup>

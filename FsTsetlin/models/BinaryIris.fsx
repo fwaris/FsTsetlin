@@ -24,10 +24,21 @@ let showClauses (tm:TM) =
     taStates tm
     |> Array.iteri (fun i x -> printfn "%d %A" i x)    
 
-let trainData = loadData trainDataFile
+let shuffle (xs:_[]) =
+    let rng = System.Random()
+    for i in 0 .. (xs.Length/2) do
+        let j = rng.Next(xs.Length)
+        let tmp = xs.[j]
+        xs.[j] <- xs.[i]
+        xs.[i] <- tmp
+let baseData = loadData trainDataFile |> Seq.toArray
+shuffle baseData
+let mark = float baseData.Length * 0.8 |> int
+let trainData = baseData |> Array.take mark
+let testData = baseData |> Array.skip mark
 let input = (trainData |> Seq.head |> fst |> Array.length)  / 2
 
-let device = torch.CPU // if torch.cuda.is_available() then torch.CUDA else torch.CPU
+let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
 printfn $"cuda: {torch.cuda.is_available()}"
 
 let toTensor cfg (batch:(int[]*int)[]) =
@@ -53,7 +64,7 @@ let tm = TM.create cfg
 trainData |> Seq.last
 
 let eval() =
-    trainData
+    testData
     |> Seq.chunkBySize 1000
     |> Seq.map (toTensor tm.Invariates.Config)
     |> Seq.collect (fun (X,y) -> 
@@ -78,7 +89,7 @@ let train epochs =
 
 #time
 
-train 10
+train 5
 ;;
 
 

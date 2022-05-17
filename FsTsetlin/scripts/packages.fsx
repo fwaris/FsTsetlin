@@ -9,4 +9,4 @@ let path = System.Environment.GetEnvironmentVariable("path")
 let path' = $"{path};{LIBTORCH}"
 System.Environment.SetEnvironmentVariable("path",path')
 
-#load @"../Tsetlin.fs"
+#load @"../FsTsetlin.fs"

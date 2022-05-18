@@ -309,7 +309,7 @@ module TM =
         for i in 0L .. batchSze - 1L do
             train (X.[i],y.[i]) tm
 
-    let eval X (tm:TM) =
+    let predict X (tm:TM) =
         use taEvals = Eval.evalTA tm.Invariates false tm.Clauses X //num_clauses * input
         use clauseEvals = Eval.andClause tm.Invariates taEvals
         if tm.Invariates.Config.Classes > 2 then
@@ -320,10 +320,10 @@ module TM =
             use v = Eval.sumClauses tm.Invariates clauseEvals
             if v.ToSingle() > 0.f then 1 else 0
 
-    let evalBatch (X:torch.Tensor) (tm:TM) =
+    let predictBatch (X:torch.Tensor) (tm:TM) =
         let batchSze = X.shape.[0]
         [|for i in 0L .. batchSze - 1L do
-            eval X.[i] tm
+            predict X.[i] tm
         |]
 
             

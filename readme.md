@@ -1,6 +1,6 @@
 # FsTsetlin
 
-This library implements a **Tsetlin machine** machine learning library in F#. The key difference between this and other Testlin machine implementations is that this library uses *tensor operations* to parallelize learning and prediction. It utilizes the tensor library underpinning TorchSharp/PyTorch. The libary has been tested to work on both CPU and GPU (although extensive performance testing has not been done yet)
+Implements a **Tsetlin machine** learning system in F#. The key difference between this and other Testlin machine implementations is that this library uses *tensor operations* to parallelize learning and prediction. FsTsetlin utilizes the tensor library underpinning TorchSharp/PyTorch. The libary has been tested to work on both CPU and GPU (although extensive performance testing has not been performed as of yet)
 
 Note: This is still a work-in-progress. Please treat it as beta-level code.
 

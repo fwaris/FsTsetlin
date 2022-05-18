@@ -69,7 +69,7 @@ let eval() =
     |> Seq.map (toTensor tm.Invariates.Config)
     |> Seq.collect (fun (X,y) -> 
         [for i in 0L .. X.shape.[0] - 1L do
-            yield TM.eval X.[i] tm, y.[i].ToInt32()
+            yield TM.predict X.[i] tm, y.[i].ToInt32()
         ])
     //|> Seq.map snd |> Seq.countBy (fun x->x) |> Seq.toArray
     |> Seq.map (fun (y',y) -> if y' = y then 1.0 else 0.0)

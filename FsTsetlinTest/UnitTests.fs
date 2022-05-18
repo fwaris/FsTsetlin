@@ -26,7 +26,7 @@ let TestEval () =
     let tm = TM.create cfg
 
     let X = torch.tensor([|1;0;0;1|],dtype=cfg.dtype)     
-    let v = TM.eval X tm
+    let v = TM.predict X tm
     Assert.Contains(v,[|0;1|])
 
 

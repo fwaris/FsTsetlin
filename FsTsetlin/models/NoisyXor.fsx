@@ -28,7 +28,7 @@ let showClauses (tm:TM) =
 let trainData = loadData trainDataFile
 let testData = loadData testDataFile
 
-let device = torch.CPU// if torch.cuda.is_available() then torch.CUDA else torch.CPU
+let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
 printfn $"cuda: {torch.cuda.is_available()}"
 
 let toTensor cfg (batch:(int[]*int)[]) =

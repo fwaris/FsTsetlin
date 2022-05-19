@@ -85,8 +85,8 @@ module Eval =
     let andClause invrts (evals:torch.Tensor)  =
         use fltr = evals.bool()
         use fltr2 = fltr.all(dimension=1L)
-        use one  = torch.tensor([|1|],dtype=invrts.Config.dtype)
-        use zero = torch.tensor([|0|],dtype=invrts.Config.dtype)
+        use one  = torch.tensor([|1|],dtype=invrts.Config.dtype, device=invrts.Config.Device)
+        use zero = torch.tensor([|0|],dtype=invrts.Config.dtype, device=invrts.Config.Device)
         torch.where(fltr2,one,zero)
 
     ///sum positive and negative polarity clause outputs

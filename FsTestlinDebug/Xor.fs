@@ -82,7 +82,7 @@ let eval1s() =
         |> Seq.head
     [for i in 0L .. Xs.shape.[0] - 1L do
         let x = Xs.[i]
-        let tas = Eval.evalTA tm.Invariates true tm.Clauses x
+        let _,tas = Eval.evalTA tm.Invariates true tm.Clauses x
         let vs = Eval.andClause tm.Invariates tas
         let sm = Eval.sumClauses tm.Invariates vs
         let Ttas = Utils.tensorData<int32> (tas.cpu())

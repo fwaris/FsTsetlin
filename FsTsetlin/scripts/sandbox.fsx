@@ -5,10 +5,24 @@ open TorchSharp
 let numClasses = 3
 let clausesPerClss = 5
 
-let a = torch.zeros([|1L; 2L|])
-let b = a.bool()
+let a = torch.tensor([|0.1f; -0.1f; 0.0f |])
+let r = torch.rand_like(a)
+let a_abs = a.abs()
+let lt = a_abs.less_equal(a_abs)
+let sel = a.where(lt,0.0f)
+
 Utils.tensorData<float32> a
-Utils.tensorData<bool> b
+Utils.tensorData<float32> r
+Utils.tensorData<float32> a_abs
+Utils.tensorData<bool> lt
+Utils.tensorData<float32> sel
+
+let fb = torch.tensor([|1; -1; 0; 1;|])
+let sts = torch.tensor([|true; false; true; false|])
+let stsBin = torch.where(sts,1,-1)
+let incrDecr = fb.mul(stsBin)
+Utils.tensorData<int> incrDecr
+
 
 
 let cl1 = torch.ones(2L * int64 numClasses * int64 clausesPerClss)

@@ -83,8 +83,11 @@ module Eval =
 
     ///AND the outputs of TAs by clause
     let andClause invrts (evals:torch.Tensor)  =
-        use prods = evals.cumprod(1L,``type``=invrts.Config.dtype)
-        prods.[torch.TensorIndex.Ellipsis,torch.TensorIndex.Single(-1L)]
+        use fltr = evals.bool()
+        use fltr2 = fltr.all(dimension=1L)
+        use one  = torch.tensor([|1|],dtype=invrts.Config.dtype)
+        use zero = torch.tensor([|0|],dtype=invrts.Config.dtype)
+        torch.where(fltr2,one,zero)
 
     ///sum positive and negative polarity clause outputs
     let sumClauses invrts (clauseEvals:torch.Tensor) =
@@ -160,7 +163,7 @@ module Train =
         use fbIncrDecr = feedbackIncrDecr invrts clauses feedback 
         updateClauses_ invrts clauses fbIncrDecr |> ignore
 
-    ///update clauses on single input - optimized for producton
+    ///update the clauses in a multiclass scenario
     let trainStepMulticlass invrts clauses (X,y:torch.Tensor) = 
         use taEvals = Eval.evalTA invrts true clauses X //num_clauses * input
         use clauseEvals = Eval.andClause invrts taEvals

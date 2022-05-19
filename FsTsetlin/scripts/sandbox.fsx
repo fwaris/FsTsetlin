@@ -5,6 +5,12 @@ open TorchSharp
 let numClasses = 3
 let clausesPerClss = 5
 
+let a = torch.zeros([|1L; 2L|])
+let b = a.bool()
+Utils.tensorData<float32> a
+Utils.tensorData<bool> b
+
+
 let cl1 = torch.ones(2L * int64 numClasses * int64 clausesPerClss)
 Utils.tensorData<float32> cl1
 

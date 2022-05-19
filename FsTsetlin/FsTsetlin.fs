@@ -321,13 +321,13 @@ module TM =
         use actions = actions
         use taEvals = taEvals
         use clauseEvals = Eval.andClause tm.Invariates taEvals
-        if tm.Invariates.Config.Classes > 2 then
+        if tm.Invariates.IsBinary then
+            use v = Eval.sumClauses tm.Invariates clauseEvals
+            if v.ToSingle() > 0.f then 1 else 0
+        else
             use byClassSum = Eval.sumClausesMulticlass tm.Invariates clauseEvals
             use idx = byClassSum.argmax()
             idx.ToInt32()
-        else
-            use v = Eval.sumClauses tm.Invariates clauseEvals
-            if v.ToSingle() > 0.f then 1 else 0
 
     let predictBatch (X:torch.Tensor) (tm:TM) =
         let batchSze = X.shape.[0]

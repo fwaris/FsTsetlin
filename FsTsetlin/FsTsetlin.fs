@@ -382,8 +382,8 @@ module TM =
         let st,taStates = ser.Deserialize<State*int32[]>(str)
         let cfg = toConfig device st
         let tm = create cfg
-        use clauses = torch.tensor(taStates,dtype=cfg.dtype,device=cfg.Device)
         use initClauses = tm.Clauses
+        let clauses = torch.tensor(taStates,dtype=cfg.dtype,device=cfg.Device,dimensions=initClauses.shape)
         {tm with 
             Clauses = clauses
         }

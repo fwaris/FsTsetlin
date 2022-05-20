@@ -92,6 +92,7 @@ let LoadSave () =
     let fn = System.IO.Path.GetTempFileName()
     TM.save fn tm
     let tm2 = TM.load torch.CPU fn
+    TM.train (X,y) tm2
     ()
 
 

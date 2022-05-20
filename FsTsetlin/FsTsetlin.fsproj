@@ -7,7 +7,7 @@
     <Company />
     <Description>Tsetlin machine  ML  library.  Uses tensor operations to parallelize learning and prediction. It utilizes the tensor library underpinning TorchSharp/PyTorch.</Description>
     <Copyright>2022</Copyright>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <PackageProjectUrl>https://github.com/fwaris/FsTsetlin</PackageProjectUrl>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/fwaris/FsTsetlin</RepositoryUrl>
@@ -20,6 +20,7 @@
     </None>
     <None Include="models\BinaryIris.fsx" />
     <None Include="models\NoisyXor.fsx" />
+    <None Include="scripts\NoisyXorGPU.fsx" />
     <None Include="scripts\packages.fsx" />
     <None Include="scripts\sandbox.fsx" />
     <None Include="scripts\debug.fsx" />

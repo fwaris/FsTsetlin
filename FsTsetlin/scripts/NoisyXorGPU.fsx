@@ -1,8 +1,19 @@
 ﻿#load @"../scripts/packages.fsx"
+#r "nuget: FSharp.Control.AsyncSeq"
+
+let LIBTORCH = 
+    let path = System.Environment.GetEnvironmentVariable("LIBTORCH")
+    if path <> null then path else @"D:\s\libtorch\lib\torch_cuda.dll"
+System.Runtime.InteropServices.NativeLibrary.Load(LIBTORCH) |> ignore
+let path = System.Environment.GetEnvironmentVariable("path")
+let path' = $"{path};{LIBTORCH}"
+System.Environment.SetEnvironmentVariable("path",path')
+
 open System.IO
 open FsTsetlin
 open TorchSharp
 open Plotly.NET
+open FSharp.Control
 
 let testDataFile = __SOURCE_DIRECTORY__ + @"/../../data/NoisyXORTestData.txt" 
 let trainDataFile = __SOURCE_DIRECTORY__ + @"/../../data/NoisyXORTrainingData.txt" 
@@ -25,8 +36,8 @@ let showClauses (tm:TM) =
     taStates tm
     |> Array.iteri (fun i x -> printfn "%d %A" i x)    
 
-let trainData = loadData trainDataFile
-let testData = loadData testDataFile
+let trainData() = loadData trainDataFile
+let testData() = loadData testDataFile
 
 let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
 printfn $"cuda: {torch.cuda.is_available()}"
@@ -52,8 +63,8 @@ let cfg =
 let tm = TM.create cfg
 
 let eval() =
-    testData
-    |> Seq.chunkBySize 1000
+    testData()
+    |> Seq.chunkBySize 10000
     |> Seq.map (toTensor tm.Invariates.Config)
     |> Seq.collect (fun (X,y) -> 
         [for i in 0L .. X.shape.[0] - 1L do
@@ -62,24 +73,40 @@ let eval() =
     |> Seq.map (fun (y',y) -> if y' = y then 1.0 else 0.0)
     |> Seq.average
 
-let train epochs =
-    for i in 1 .. epochs do
-        trainData
+let trainEpoch() = 
+        trainData()
         |> Seq.chunkBySize 10000 
-        |> Seq.map (toTensor tm.Invariates.Config)
-        |> Seq.iter (fun (X,y) -> 
+        |> AsyncSeq.ofSeq
+        |> AsyncSeq.map (toTensor tm.Invariates.Config)
+        |> AsyncSeq.map  (fun (X,y) -> 
             TM.trainBatch (X,y) tm
+            X,y)
+        |> AsyncSeq.iter (fun (X,y) ->
             X.Dispose()
             y.Dispose())
-        printfn $"{i}: {eval()}"
+open System
+let train epochs =    
+    async {
+        let t1 = DateTime.Now
+        for i in 1 .. epochs do
+            do! trainEpoch()
+            let acc = eval()
+            printfn $"Epoch: {i}, Acc:{acc}"
+        let t2 = DateTime.Now
+        let elapsed = (t2-t1).TotalMinutes
+        printfn $"time {elapsed}"
+    }
+    |> Async.Start
+
 
 #time
-
+(*
+train 10
+*)
 ;;
 
 
 (*
-train 10
 showClauses tm
 
 let tas = taStates tm

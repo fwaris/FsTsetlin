@@ -1,6 +1,11 @@
 ﻿#load "packages.fsx"
 open FsTsetlin
 open TorchSharp
+open System
+
+let asx  = System.Enum.GetValues<torch.ScalarType>()
+let asx2 = torch.ScalarType.Int32.ToString()
+let b:torch.ScalarType = System.Enum.Parse(asx2)
 
 let numClasses = 3
 let clausesPerClss = 5

@@ -70,4 +70,28 @@ let TrainMulti () =
     let y = torch.tensor([|2|],dtype=torch.int64)
     TM.train (X,y) tm
 
+[<Test>]
+let LoadSave () =
+    let cfg =
+        {
+            s                   = 3.0f
+            T                   = 5.0f
+            TAStates            = 6
+            ClausesPerClass     = 4
+            dtype               = torch.int32
+            Device              = torch.CPU
+            InputSize           = 2
+            Classes             = 3
+        }
+
+    let tm = TM.create cfg
+
+    let X = torch.tensor([|1;0;0;1|],dtype=cfg.dtype)     
+    let y = torch.tensor([|2|],dtype=torch.int64)
+    TM.train (X,y) tm
+    let fn = System.IO.Path.GetTempFileName()
+    TM.save fn tm
+    let tm2 = TM.load torch.CPU fn
+    ()
+
 

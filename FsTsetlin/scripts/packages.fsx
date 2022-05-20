@@ -1,6 +1,6 @@
 ﻿#r "nuget: TorchSharp"
 #r "nuget: Plotly.NET"
-
+#r "nuget: FsPickler"
 #r "nuget: libtorch-cpu, 1.10.0.1"   // cpu only version
 
 //let LIBTORCH = 

@@ -1,6 +1,7 @@
 ﻿namespace FsTsetlin 
 open TorchSharp
 open System
+open MBrace.FsPickler
 
 type Config = 
     {
@@ -330,4 +331,59 @@ module TM =
         [|for i in 0L .. batchSze - 1L do
             predict X.[i] tm
         |]
+
+    type private State = 
+        {
+            s                   : float32
+            T                   : float32
+            TAStates            : int
+            dtype               : string
+            ClausesPerClass     : int
+            InputSize           : int
+            Classes             : int // 2 or more            
+        }
+
+    let private toState (cfg:Config) = 
+        {
+            s                   = cfg.s
+            T                   = cfg.T
+            TAStates            = cfg.TAStates
+            dtype               = cfg.dtype.ToString()
+            ClausesPerClass     = cfg.ClausesPerClass
+            InputSize           = cfg.InputSize
+            Classes             = cfg.Classes
+        }
+
+    let private toConfig dvc (cfg:State) : Config = 
+        let dt : torch.ScalarType = System.Enum.Parse<torch.ScalarType>(cfg.dtype)
+        {
+            s                   = cfg.s
+            T                   = cfg.T
+            TAStates            = cfg.TAStates
+            dtype               = dt
+            Device              = dvc
+            ClausesPerClass     = cfg.ClausesPerClass
+            InputSize           = cfg.InputSize
+            Classes             = cfg.Classes
+        }
             
+    let save (file:string) (tm:TM) =
+        let cfg = tm.Invariates.Config
+        use clauses = tm.Clauses.to_type(torch.int32).cpu()
+        let taStates = clauses.data<int32>().ToArray()
+        let package = toState cfg,taStates
+        let ser = FsPickler.CreateXmlSerializer()
+        use str = System.IO.File.Create file
+        ser.Serialize(str,package)
+
+    let load (device:torch.Device) (file:string) = 
+        let ser = FsPickler.CreateXmlSerializer()
+        let str = System.IO.File.OpenRead file
+        let st,taStates = ser.Deserialize<State*int32[]>(str)
+        let cfg = toConfig device st
+        let tm = create cfg
+        use clauses = torch.tensor(taStates,dtype=cfg.dtype,device=cfg.Device)
+        use initClauses = tm.Clauses
+        {tm with 
+            Clauses = clauses
+        }

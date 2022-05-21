@@ -38,13 +38,13 @@ let toTensor cfg (batch:(int[]*int)[]) =
     X,y
 
 let cfg =
-    {
-        s           = 3.9f
-        T           = 15.0f
-        TAStates    = 100
-        dtype       = torch.int32
-        Device      = device
-        InputSize   = 12
+    { Config.Default with
+        s               = 3.9f
+        T               = 15.0f
+        TAStates        = 100
+        dtype           = torch.int32
+        Device          = device
+        InputSize       = 12
         ClausesPerClass = 10
         Classes         = 2
     }

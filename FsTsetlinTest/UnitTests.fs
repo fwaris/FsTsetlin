@@ -12,7 +12,7 @@ let Setup () =
 [<Test>]
 let TestEval () =
     let cfg =
-        {
+        { Config.Default with
             s                   = 3.0f
             T                   = 5.0f
             TAStates            = 6
@@ -33,7 +33,7 @@ let TestEval () =
 [<Test>]
 let TrainBinary () =
     let cfg =
-        {
+        { Config.Default with
             s                   = 3.0f
             T                   = 5.0f
             TAStates            = 6
@@ -53,7 +53,7 @@ let TrainBinary () =
 [<Test>]
 let TrainMulti () =
     let cfg =
-        {
+        { Config.Default with
             s                   = 3.0f
             T                   = 5.0f
             TAStates            = 6
@@ -73,7 +73,7 @@ let TrainMulti () =
 [<Test>]
 let LoadSave () =
     let cfg =
-        {
+        { Config.Default with
             s                   = 3.0f
             T                   = 5.0f
             TAStates            = 6

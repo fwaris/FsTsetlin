@@ -38,14 +38,14 @@ let toTensor cfg (batch:(int[]*int)[]) =
     X,y
 
 let cfg =
-    {
+    { Config.Default with
         s           = 3.9f
         T           = 15.0f
         TAStates    = 100
         dtype       = torch.int32
         Device      = device
         InputSize   = 12
-        ClausesPerClass = 1000
+        ClausesPerClass = 10
         Classes         = 2
     }
 
@@ -74,12 +74,12 @@ let train epochs =
         printfn $"{i}: {eval()}"
 
 #time
+train 10
 
 ;;
 
 
 (*
-train 10
 showClauses tm
 
 let tas = taStates tm

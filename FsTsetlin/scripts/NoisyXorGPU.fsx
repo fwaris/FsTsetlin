@@ -49,7 +49,7 @@ let toTensor cfg (batch:(int[]*int)[]) =
     X,y
 
 let cfg =
-    {
+    { Config.Default with
         s           = 3.9f
         T           = 15.0f
         TAStates    = 100

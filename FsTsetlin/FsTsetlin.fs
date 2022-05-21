@@ -5,15 +5,29 @@ open MBrace.FsPickler
 
 type Config = 
     {
-        s                   : float32
-        T                   : float32
-        TAStates            : int
-        dtype               : torch.ScalarType
-        Device              : torch.Device
-        ClausesPerClass     : int
-        InputSize           : int
-        Classes             : int // 2 or more
+        s                           : float32
+        T                           : float32
+        TAStates                    : int
+        dtype                       : torch.ScalarType
+        Device                      : torch.Device
+        ClausesPerClass             : int
+        InputSize                   : int
+        Classes                     : int // 2 or more
+        BoostTruePositiveFeedback   : bool
     }
+    with 
+        static member Default  = 
+            {
+                s                           = 3.9f
+                T                           = 15.0f
+                TAStates                    = 100
+                dtype                       = torch.int32
+                Device                      = torch.CPU
+                ClausesPerClass             = 100
+                InputSize                   = 0
+                Classes                     = 2
+                BoostTruePositiveFeedback   = false
+            }
 
 /// cache invariates for optimization
 type Invariates = 
@@ -216,43 +230,44 @@ module TM =
     let inaction = 0.0f
     let pnlty    = -1.0f
 
-    let payout s = 
+    let payout boostTPF s = 
         let ``1/s``     = 1.0f / s
         let ``(s-1)/s`` = (s - 1.0f) / s
+        let ``1 or (s-1)/s``  = if boostTPF then 1.0f else ``(s-1)/s``
         [|
         (*polarity    literal     action  Cw  y     p_reward *)
-        (*0           0           0       0   0 *)  ``1/s``         //0
-        (*0           0           0       0   1 *)  inaction        //1
-        (*0           0           0       1   0 *)  ``1/s``         //2
-        (*0           0           0       1   1 *)  pnlty           //3
-        (*0           0           1       0   0 *)  -``1/s``        //4
-        (*0           0           1       0   1 *)  inaction        //5
-        (*0           0           1       1   0 *)  inaction        //6
-        (*0           0           1       1   1 *)  inaction        //7
-        (*0           1           0       0   0 *)  ``1/s``         //8
-        (*0           1           0       0   1 *)  inaction        //9
-        (*0           1           0       1   0 *)  -``(s-1)/s``    //10
-        (*0           1           0       1   1 *)  inaction        //11
-        (*0           1           1       0   0 *)  -``1/s``        //12
-        (*0           1           1       0   1 *)  inaction        //13
-        (*0           1           1       1   0 *)  ``(s-1)/s``     //14
-        (*0           1           1       1   1 *)  inaction        //15
-        (*1           0           0       0   0 *)  inaction        //16
-        (*1           0           0       0   1 *)  ``1/s``         //17
-        (*1           0           0       1   0 *)  pnlty           //18
-        (*1           0           0       1   1 *)  ``1/s``         //19
-        (*1           0           1       0   0 *)  inaction        //20
-        (*1           0           1       0   1 *)  -``1/s``        //21
-        (*1           0           1       1   0 *)  inaction        //22
-        (*1           0           1       1   1 *)  inaction        //23
-        (*1           1           0       0   0 *)  inaction        //24
-        (*1           1           0       0   1 *)  ``1/s``         //25
-        (*1           1           0       1   0 *)  inaction        //26
-        (*1           1           0       1   1 *)  -``(s-1)/s``    //27
-        (*1           1           1       0   0 *)  inaction        //28
-        (*1           1           1       0   1 *)  -``1/s``        //29
-        (*1           1           1       1   0 *)  inaction        //30
-        (*1           1           1       1   1 *)  ``(s-1)/s``     //31
+        (*0           0           0       0   0 *)  ``1/s``             //0
+        (*0           0           0       0   1 *)  inaction            //1
+        (*0           0           0       1   0 *)  ``1/s``             //2
+        (*0           0           0       1   1 *)  pnlty               //3
+        (*0           0           1       0   0 *)  -``1/s``            //4
+        (*0           0           1       0   1 *)  inaction            //5
+        (*0           0           1       1   0 *)  inaction            //6
+        (*0           0           1       1   1 *)  inaction            //7
+        (*0           1           0       0   0 *)  ``1/s``             //8
+        (*0           1           0       0   1 *)  inaction            //9
+        (*0           1           0       1   0 *)  -``(s-1)/s``        //10
+        (*0           1           0       1   1 *)  inaction            //11
+        (*0           1           1       0   0 *)  -``1/s``            //12
+        (*0           1           1       0   1 *)  inaction            //13
+        (*0           1           1       1   0 *)  ``(s-1)/s``         //14
+        (*0           1           1       1   1 *)  inaction            //15
+        (*1           0           0       0   0 *)  inaction            //16
+        (*1           0           0       0   1 *)  ``1/s``             //17
+        (*1           0           0       1   0 *)  pnlty               //18
+        (*1           0           0       1   1 *)  ``1/s``             //19
+        (*1           0           1       0   0 *)  inaction            //20
+        (*1           0           1       0   1 *)  -``1/s``            //21
+        (*1           0           1       1   0 *)  inaction            //22
+        (*1           0           1       1   1 *)  inaction            //23
+        (*1           1           0       0   0 *)  inaction            //24
+        (*1           1           0       0   1 *)  ``1/s``             //25
+        (*1           1           0       1   0 *)  inaction            //26
+        (*1           1           0       1   1 *)  -``1 or (s-1)/s``   //27
+        (*1           1           1       0   0 *)  inaction            //28
+        (*1           1           1       0   1 *)  -``1/s``            //29
+        (*1           1           1       1   0 *)  inaction            //30
+        (*1           1           1       1   1 *)  ``1 or (s-1)/s``    //31
         |]
 
     let create (cfg:Config) =
@@ -278,12 +293,13 @@ module TM =
         let t2 = torch.tensor(2.0f * cfg.T,device=cfg.Device)
         let ones  = torch.tensor([|1|], dtype = cfg.dtype, device = cfg.Device)
         let zeros = torch.tensor([|0|], dtype = cfg.dtype, device = cfg.Device)
+        let payout = payout cfg.BoostTruePositiveFeedback cfg.s
         let cache =
             {
                 PolarityIndex   = polarityIdx
                 PolaritySign    = torch.tensor(plrtySgn, dtype=cfg.dtype, device=cfg.Device)
                 PlrtySignClass  = torch.tensor(plrtySgnCls, dtype=cfg.dtype, device=cfg.Device)
-                PayoutMatrix    = torch.tensor(payout cfg.s, dimensions = [|2L;2L;2L;2L;2L|], device=cfg.Device)   
+                PayoutMatrix    = torch.tensor(payout, dimensions = [|2L;2L;2L;2L;2L|], device=cfg.Device)   
                 MidState        = torch.tensor([|cfg.TAStates|],dtype=cfg.dtype, device=cfg.Device)
                 LowState        = torch.tensor([|1|],dtype=cfg.dtype,device=cfg.Device)
                 HighState       = torch.tensor([|2*cfg.TAStates|],dtype=cfg.dtype,device=cfg.Device)
@@ -334,37 +350,40 @@ module TM =
 
     type private State = 
         {
-            s                   : float32
-            T                   : float32
-            TAStates            : int
-            dtype               : string
-            ClausesPerClass     : int
-            InputSize           : int
-            Classes             : int // 2 or more            
+            s                           : float32
+            T                           : float32
+            BoostTruePositiveFeedback   : bool
+            TAStates                    : int
+            dtype                       : string
+            ClausesPerClass             : int
+            InputSize                   : int
+            Classes                     : int // 2 or more            
         }
 
     let private toState (cfg:Config) = 
         {
-            s                   = cfg.s
-            T                   = cfg.T
-            TAStates            = cfg.TAStates
-            dtype               = cfg.dtype.ToString()
-            ClausesPerClass     = cfg.ClausesPerClass
-            InputSize           = cfg.InputSize
-            Classes             = cfg.Classes
+            s                           = cfg.s
+            T                           = cfg.T
+            BoostTruePositiveFeedback   = cfg.BoostTruePositiveFeedback
+            TAStates                    = cfg.TAStates
+            dtype                       = cfg.dtype.ToString()
+            ClausesPerClass             = cfg.ClausesPerClass
+            InputSize                   = cfg.InputSize
+            Classes                     = cfg.Classes
         }
 
     let private toConfig dvc (cfg:State) : Config = 
         let dt : torch.ScalarType = System.Enum.Parse<torch.ScalarType>(cfg.dtype)
         {
-            s                   = cfg.s
-            T                   = cfg.T
-            TAStates            = cfg.TAStates
-            dtype               = dt
-            Device              = dvc
-            ClausesPerClass     = cfg.ClausesPerClass
-            InputSize           = cfg.InputSize
-            Classes             = cfg.Classes
+            s                           = cfg.s
+            T                           = cfg.T
+            BoostTruePositiveFeedback   = cfg.BoostTruePositiveFeedback
+            TAStates                    = cfg.TAStates
+            dtype                       = dt
+            Device                      = dvc
+            ClausesPerClass             = cfg.ClausesPerClass
+            InputSize                   = cfg.InputSize
+            Classes                     = cfg.Classes
         }
             
     let save (file:string) (tm:TM) =

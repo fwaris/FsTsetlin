@@ -37,15 +37,15 @@ let toTensor cfg (batch:(int[]*int)[]) =
     X,y
 
 let cfg =
-    {
-        s           = 3.0f
-        T           = 10.0f
-        TAStates    = 100
-        dtype       = torch.int32
-        Device      = device
-        InputSize   = input
+    { Config.Default with 
+        s               = 3.0f
+        T               = 10.0f
+        TAStates        = 100
+        dtype           = torch.int32
+        Device          = device
+        InputSize       = input
         ClausesPerClass = 100
-        Classes         = 3
+        Classes         = 3        
     }
 
 let tm = TM.create cfg

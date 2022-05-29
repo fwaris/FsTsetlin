@@ -37,11 +37,11 @@ let cfg =
     { Config.Default with
         s           = 3.0f
         T           = 10.0f
-        TAStates    = 2
+        TAStates    = 100       
         dtype       = torch.int16
         Device      = device
         InputSize   = inputSize
-        ClausesPerClass = 2 //total = 10 * 100 = 1000
+        ClausesPerClass = 100 //total = 10 * 100 = 1000
         Classes         = classes
     }
 
@@ -93,5 +93,5 @@ runner() |> Async.Start
 
 *)
 
-let run() = runTrain 5
+let run() = runTrain 1
 

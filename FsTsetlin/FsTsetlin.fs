@@ -305,9 +305,9 @@ module TM =
                 PolaritySign    = torch.tensor(plrtySgn, dtype=cfg.dtype, device=cfg.Device)
                 PlrtySignClass  = torch.tensor(plrtySgnCls, dtype=cfg.dtype, device=cfg.Device)
                 PayoutMatrix    = torch.tensor(payout, dimensions = [|2L;2L;2L;2L;2L|], device=cfg.Device)   
-                MidState        = torch.tensor([|cfg.TAStates|],dtype=cfg.dtype, device=cfg.Device)
-                LowState        = torch.tensor([|1|],dtype=cfg.dtype,device=cfg.Device)
-                HighState       = torch.tensor([|2*cfg.TAStates|],dtype=cfg.dtype,device=cfg.Device)
+                MidState        = torch.tensor([|0|],dtype=cfg.dtype, device=cfg.Device)
+                LowState        = torch.tensor([|-cfg.TAStates|],dtype=cfg.dtype,device=cfg.Device)
+                HighState       = torch.tensor([|cfg.TAStates|],dtype=cfg.dtype,device=cfg.Device)
                 Zeros           = zeros
                 Ones            = ones
                 Config          = cfg

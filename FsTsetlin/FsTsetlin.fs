@@ -100,9 +100,7 @@ module Eval =
     let andClause invrts (evals:torch.Tensor)  =
         use fltr = evals.bool()
         use fltr2 = fltr.all(dimension=1L)
-        use one  = torch.tensor([|1|],dtype=invrts.Config.dtype, device=invrts.Config.Device)
-        use zero = torch.tensor([|0|],dtype=invrts.Config.dtype, device=invrts.Config.Device)
-        torch.where(fltr2,one,zero)
+        torch.where(fltr2,invrts.Ones,invrts.Zeros)
 
     ///sum positive and negative polarity clause outputs
     let sumClauses invrts (clauseEvals:torch.Tensor) =
@@ -125,10 +123,18 @@ module Train =
     let rewardProb invrts (actions:torch.Tensor) (clauseEvals:torch.Tensor) (X:torch.Tensor,y:torch.Tensor) =
         use ce_t = clauseEvals.reshape(-1L,1L)
         (*polarity    literal     action  Cw  y   ->  p_reward *)
-        use literal_f = X.expand_as(actions).reshape([|1L;-1L|]).to_type(torch.int64)
-        use action_f = torch.where(actions,invrts.Ones,invrts.Zeros).reshape([|1L;-1L|]).to_type(torch.int64)
-        use cw_f = torch.hstack(ResizeArray[for _ in 1 .. int X.shape.[0] -> ce_t]).reshape([|1L;-1L|]).to_type(torch.int64)
-        use y_f = y.expand_as(actions).reshape([|1L;-1L|]).to_type(torch.int64)
+        use literal_f1 = X.expand_as(actions)
+        use literal_f2 = literal_f1.reshape([|1L;-1L|])
+        use literal_f  = literal_f2.to_type(torch.int64)
+        use action_f1 = torch.where(actions,invrts.Ones,invrts.Zeros)
+        use action_f2 = action_f1.reshape([|1L;-1L|])
+        use action_f  = action_f2.to_type(torch.int64)
+        use cw_f1 = ce_t.broadcast_to(actions.shape)
+        use cw_f2 = cw_f1.reshape([|1L;-1L|])
+        use cw_f  = cw_f2.to_type(torch.int64)
+        use y_f1 = y.expand_as(actions)
+        use y_f2 = y_f1.reshape([|1L;-1L|])
+        use y_f  = y_f2.to_type(torch.int64)
         use plrt_f = invrts.PolarityIndex.reshape([|1L;-1L|])
         let pReward = invrts.PayoutMatrix.index([|plrt_f; literal_f; action_f; cw_f; y_f|])
         pReward
@@ -149,8 +155,7 @@ module Train =
         use pFilter = feebackFilter.logical_and(pSelFltr)
         use rwdSign = pReward.sign()
         use rwdSignInt = rwdSign.to_type(invrts.Config.dtype)
-        use zeros = torch.zeros_like(rwdSignInt)
-        let fb = rwdSignInt.where(pFilter,zeros)
+        let fb = rwdSignInt.where(pFilter,invrts.Zeros)
         fb
 
     ///calculate feedback incr/decr values based on selected feedback reward(+)/penalty(-)/ignore(0) and TA state

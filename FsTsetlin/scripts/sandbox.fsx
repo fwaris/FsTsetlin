@@ -3,10 +3,36 @@ open FsTsetlin
 open TorchSharp
 open System
 
+
+let cfg =
+    { Config.Default with
+        s           = 3.0f
+        T           = 10.0f
+        TAStates    = 1000
+        dtype       = torch.int16
+        Device      = torch.CPU
+        InputSize   = 100
+        ClausesPerClass = 100 //total = 10 * 4000 = 40000
+        Classes         = 10
+    }
+
+let tm = TM.create cfg
+
+let payout = tm.Invariates.PayoutMatrix
+
+let dt = torch.int64
+
+let i1 = torch.tensor([|0|],dtype=dt, dimensions = [|1L;1L|])
+let i2 = torch.tensor([|0|],dtype=dt, dimensions = [|1L;1L|])
+let i3 = torch.tensor([|0|],dtype=dt, dimensions = [|1L;1L|])
+let i4 = torch.tensor([|0|],dtype=dt, dimensions = [|1L;1L|])
+let i5 = torch.tensor([|0|],dtype=dt, dimensions = [|1L;1L|])
+
+let vs = payout.[[|i1; i2; i3; i4; i5|]]
+
 let asx  = System.Enum.GetValues<torch.ScalarType>()
 let asx2 = torch.ScalarType.Int32.ToString()
 let b:torch.ScalarType = System.Enum.Parse(asx2)
-
 let numClasses = 3
 let clausesPerClss = 5
 
@@ -41,7 +67,29 @@ Utils.tensorData<float32> cl3
 let i = cl3.argmax()
 i.ToInt64()
 
-//clauses for i are treated as y = 1
+printfn "%B" (uint (1<<<31))
+
+printfn "%B" ((~~~0) - 1)
+
+let la_chunks = (2*784-1) / 32 + 1
+
+let CLAUSES = 2000u
+let INT_SIZE= 32u
+let FEATURES = 784u
+let CLAUSE_CHUNKS = ((CLAUSES - 1u)/INT_SIZE + 1u)
+
+let filter : uint32 =
+    if ((FEATURES*2u) % 32u > 0u) then
+        (~~~(0xffffffffu <<< (int ((FEATURES*2u) % INT_SIZE)))) 
+    else
+        0xffffffffu
+
+printfn "%B" (0x55555555)
+printfn "%B" (0xaaaaaaaa)
+let t1 = torch.tensor([|1|])
+
+
+//clauses 0x55555555 i are treated as y = 1
 //find random class (not i) and treat it as y = 0
 
 (*

@@ -16,6 +16,8 @@ let loadData (path:string) =
         let y = xs[^0]
         X,y)
 
+
+
 let taStates (tm:TM) =
     let dt = tm.Clauses.``to``(torch.CPU).data<int32>().ToArray()
     dt |> Array.chunkBySize (tm.Invariates.Config.InputSize * 2)

@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="mnist.fs" />
     <Compile Include="Xor.fs" />
     <Compile Include="Multiclass.fs" />
     <Compile Include="TensorTests.fs" />
@@ -14,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="libtorch-cpu" Version="1.10.0.1" />
+    <PackageReference Include="libtorch-cuda-11.3-win-x64" Version="1.10.0.1" />
   </ItemGroup>
 
   <ItemGroup>

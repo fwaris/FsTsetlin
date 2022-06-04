@@ -3,6 +3,21 @@ open FsTsetlin
 open TorchSharp
 open System
 
+let cls = torch.tensor([|for i in 1 .. 2*6 -> i |], dimensions=[|2L;6L|])
+let T_cls = Utils.tensorData<int> cls
+let inp = 
+    [
+        [for i in 0 .. 5 -> 0]
+        [for i in 0 .. 5 -> 1]
+        [for i in 0 .. 5 -> 3]
+    ]
+    |> Seq.collect (fun x -> x)
+    |> Seq.toArray
+let tinp = torch.tensor(inp,dimensions = [|3L; 6L|])
+let T_tinp = Utils.tensorData<int> tinp
+let cls2 = cls.reshape(1L,-1L)
+Utils.tensorData<int> cls2
+let cls3 = cls2.broadcast_to(tinp.shape)
 
 let cfg =
     { Config.Default with

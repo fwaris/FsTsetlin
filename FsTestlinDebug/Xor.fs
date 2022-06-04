@@ -73,22 +73,6 @@ let evalVotes() =
     |> Seq.filter (fun (a,b) -> a = 1)
     |> Seq.toArray
     
-let eval1s() =
-    let (Xs,ys) =
-        testData
-        |> Seq.filter (fun (a,b) -> b=1)
-        |> Seq.chunkBySize(5)
-        |> Seq.map (toTensor tm.Invariates.Config)
-        |> Seq.head
-    [for i in 0L .. Xs.shape.[0] - 1L do
-        let x = Xs.[i]
-        let _,tas = Eval.evalTA tm.Invariates true tm.Clauses x
-        let vs = Eval.andClause tm.Invariates tas
-        let sm = Eval.sumClauses tm.Invariates vs
-        let Ttas = Utils.tensorData<int32> (tas.cpu())
-        sm.ToDouble()
-        ]
-
 let train epochs =
     for i in 1 .. epochs do
         trainData

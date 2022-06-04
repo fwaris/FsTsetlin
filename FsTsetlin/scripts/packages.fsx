@@ -11,5 +11,5 @@
 //let path' = $"{path};{LIBTORCH}"
 //System.Environment.SetEnvironmentVariable("path",path')
 
-
+#load @"../Utils.fs"
 #load @"../FsTsetlin.fs"

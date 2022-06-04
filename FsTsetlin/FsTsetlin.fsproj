@@ -25,6 +25,7 @@
     <None Include="scripts\packages.fsx" />
     <None Include="scripts\sandbox.fsx" />
     <None Include="scripts\debug.fsx" />
+    <Compile Include="Utils.fs" />
     <Compile Include="FsTsetlin.fs" />
   </ItemGroup>
 

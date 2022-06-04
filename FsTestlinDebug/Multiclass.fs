@@ -75,7 +75,7 @@ let train epochs =
         printfn $"{i}: {eval()}"
 
 let run() =
-    train 1
+    train 10
 ;;
 
 

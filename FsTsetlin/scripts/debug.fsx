@@ -55,7 +55,7 @@ let tm = TM.create cfg
 let eval() =
     testData
     |> Seq.chunkBySize 1000
-    |> Seq.map (toTensor tm.Invariates.Config)
+    |> Seq.map (toTensor tm.TMState.Config)
     |> Seq.collect (fun (X,y) -> 
         [for i in 0L .. X.shape.[0] - 1L do
             yield TM.predict X.[i] tm, y.[i].ToInt32()
@@ -67,20 +67,20 @@ let train epochs =
     for i in 1 .. epochs do
         trainData
         |> Seq.chunkBySize 1000 
-        |> Seq.map (toTensor tm.Invariates.Config)
+        |> Seq.map (toTensor tm.TMState.Config)
         |> Seq.iter (fun (X,y) -> 
             TM.trainBatch (X,y) tm
             X.Dispose()
             y.Dispose())
         printfn $"{i}: {eval()}"
-        showClauses tm.Invariates tm.Clauses
+        showClauses tm.TMState tm.Clauses
         
 
-let tX1,ty1 = [|trainData |> Seq.item 3|] |> toTensor tm.Invariates.Config
+let tX1,ty1 = [|trainData |> Seq.item 3|] |> toTensor tm.TMState.Config
 let X1=tX1.squeeze()
 let y1=ty1.squeeze()
 
-let taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss = Train.trainStepDbg tm.Invariates tm.Clauses (X1,y1)
+let taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss = Train.trainStepDbg tm.TMState tm.Clauses (X1,y1)
 
 let s = 3.9f
 let ``1/s``     = 1.0f / s
@@ -104,7 +104,7 @@ let printClause i =
     let clss        = Utils.tensorData<int> tm.Clauses
     let fbIncrDecr  = Utils.tensorData<int> fbIncrDecr
     let updClss     = Utils.tensorData<int> updtClss
-    let polarity    = Utils.tensorData<int64> (tm.Invariates.PolarityIndex.reshape(tm.Clauses.shape))
+    let polarity    = Utils.tensorData<int64> (tm.TMState.PolarityIndex.reshape(tm.Clauses.shape))
 
     let act = match tas with Utils.T (ds) -> match ds.[i] with Utils.F xs -> xs 
     let prob = match rewards with Utils.T ds -> match ds.[i] with Utils.F xs -> xs

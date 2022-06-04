@@ -1,5 +1,5 @@
 ﻿module Pgm
-mnist.run() |> ignore
+mnist.run()
 //Xor.run()
 //Multiclass.run()
 //TensorTests.run()

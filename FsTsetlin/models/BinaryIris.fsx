@@ -18,7 +18,7 @@ let loadData (path:string) =
 
 let taStates (tm:TM) =
     let dt = tm.Clauses.``to``(torch.CPU).data<int32>().ToArray()
-    dt |> Array.chunkBySize (tm.Invariates.Config.InputSize * 2)
+    dt |> Array.chunkBySize (tm.TMState.Config.InputSize * 2)
 
 let showClauses (tm:TM) =
     taStates tm
@@ -66,7 +66,7 @@ trainData |> Seq.last
 let eval() =
     testData
     |> Seq.chunkBySize 1000
-    |> Seq.map (toTensor tm.Invariates.Config)
+    |> Seq.map (toTensor tm.TMState.Config)
     |> Seq.collect (fun (X,y) -> 
         [for i in 0L .. X.shape.[0] - 1L do
             yield TM.predict X.[i] tm, y.[i].ToInt32()
@@ -80,7 +80,7 @@ let train epochs =
     for i in 1 .. epochs do
         trainData
         |> Seq.chunkBySize 1000
-        |> Seq.map (toTensor tm.Invariates.Config)
+        |> Seq.map (toTensor tm.TMState.Config)
         |> Seq.iter (fun (X,y) -> 
             TM.trainBatch (X,y) tm
             X.Dispose()

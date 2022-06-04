@@ -33,7 +33,7 @@ let cfg =
 
 let tm = TM.create cfg
 
-let payout = tm.Invariates.PayoutMatrix
+let payout = tm.TMState.PayoutMatrix
 
 let dt = torch.int64
 

@@ -389,13 +389,36 @@ module TM =
             InputSize                   = cfg.InputSize
             Classes                     = cfg.Classes
         }
-            
-    let save (file:string) (tm:TM) =
-        let cfg = tm.TMState.Config
+
+    let dispose (tm:TM) =
+        tm.Weights.Dispose()
+        tm.Clauses.Dispose()
+        tm.TMState.HighState.Dispose()
+        tm.TMState.LowState.Dispose()
+        tm.TMState.MidState.Dispose()
+        tm.TMState.PayoutMatrix.Dispose()
+        tm.TMState.PlrtySignClass.Dispose()
+        tm.TMState.PolarityIndex.Dispose()
+        tm.TMState.PolaritySign.Dispose()
+        tm.TMState.Ones.Dispose()
+        tm.TMState.Zeros.Dispose()
+        tm.TMState.T2.Dispose()
+        tm.TMState.TMinus.Dispose()
+        tm.TMState.TPlus.Dispose()
+        tm.TMState.Y0.Dispose()
+        tm.TMState.Y1.Dispose()       
+
+    let exportLearned (tm:TM) = 
         use clauses = tm.Clauses.to_type(torch.int32).cpu()
         use weights = tm.Weights.to_type(torch.int32).cpu()
         let taStates = clauses.data<int32>().ToArray()
-        let package = toState cfg,taStates,weights
+        let clsWts   = weights.data<int32>().ToArray()
+        taStates,clsWts
+
+    let save (file:string) (tm:TM) =
+        let cfg = tm.TMState.Config
+        let taStates,clsWts = exportLearned tm
+        let package = toState cfg,taStates,clsWts
         let ser = FsPickler.CreateXmlSerializer()
         use str = System.IO.File.Create file
         ser.Serialize(str,package)

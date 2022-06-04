@@ -89,9 +89,14 @@ let LoadSave () =
     let X = torch.tensor([|1;0;0;1|],dtype=cfg.dtype)     
     let y = torch.tensor([|2|],dtype=torch.int64)
     TM.train (X,y) tm
+    let cls1,wts1 = TM.exportLearned tm
     let fn = System.IO.Path.GetTempFileName()
     TM.save fn tm
     let tm2 = TM.load torch.CPU fn
+    let cls2,wts2 = TM.exportLearned tm2
+    Assert.True( (cls1 = cls2) , message = "clauses states not match")
+    Assert.True( (wts1 = wts2) , message = "clauses weights not match")
+
     TM.train (X,y) tm2
     ()
 

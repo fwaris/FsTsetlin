@@ -43,6 +43,7 @@ let cfg =
         InputSize   = inputSize
         ClausesPerClass = 100 //total = 10 * 100 = 1000
         Classes         = classes
+        MaxWeight       = 1
     }
 
 let tm = TM.create cfg
@@ -92,6 +93,6 @@ let runner() =
 runner() |> Async.Start
 
 *)
-let run() = runTrain 1
+let run() = runTrain 5
 
 

@@ -14,6 +14,7 @@ type Config =
         InputSize                   : int
         Classes                     : int // 2 or more
         BoostTruePositiveFeedback   : bool
+        MaxWeight                   : int
     }
     with 
         static member Default  = 
@@ -27,9 +28,10 @@ type Config =
                 InputSize                   = 0
                 Classes                     = 2
                 BoostTruePositiveFeedback   = false
+                MaxWeight                   = 1
             }
 
-/// cache invariates for optimization
+/// cached internal state
 type TMState = 
     {
         Config          : Config
@@ -42,6 +44,7 @@ type TMState =
         HighState       : torch.Tensor
         Ones            : torch.Tensor
         Zeros           : torch.Tensor
+        MinusOnes       : torch.Tensor
         TPlus           : torch.Tensor
         TMinus          : torch.Tensor
         T2              : torch.Tensor
@@ -50,6 +53,7 @@ type TMState =
         IsBinary        : bool
         ChunkedClauses  : torch.Tensor[]
         ChunkedWeights  : torch.Tensor[]
+        MaxWeightT      : torch.Tensor
     }
 
 type TM =
@@ -86,24 +90,25 @@ module Eval =
         use fltr2 = fltr.all(dimension=1L)
         torch.where(fltr2,tmst.Ones,tmst.Zeros)
 
-    /////sum positive and negative polarity clause outputs
-    //let sumClauses tmst (clauseEvals:torch.Tensor) =
-    //    use withPlry = clauseEvals.mul(tmst.PolaritySign)
-    //    withPlry.sum(``type``=torch.float32)
-
     ///sum positive and negative polarity clause outputs for a single class
     let sumClass tmst (clauseEvals:torch.Tensor) (weights:torch.Tensor) =
         use wtd = clauseEvals.mul(weights)
         use withPlry = wtd.mul(tmst.PlrtySignClass)
         withPlry.sum(``type``=torch.float32)
 
-    /////sum positive and negative polarity clause outputs per class for all classes
+    ///sum positive and negative polarity clause outputs per class for all classes
     let sumClausesMulticlass tmst (clauseEvals:torch.Tensor) (weights:torch.Tensor) =
-        use wts = weights.reshape(1L,-1L)
-        use wtd = clauseEvals.mul(wts)
-        use withPlry = wtd.mul(tmst.PolaritySign)
-        use byClass = withPlry.reshape( int64 tmst.Config.Classes, -1L )
-        byClass.sum(1L, ``type``= torch.float32)
+        if tmst.Config.MaxWeight > 1 then            
+            use wts = weights.reshape(1L,-1L)
+            use wtd = clauseEvals.mul(wts)
+            use withPlry = wtd.mul(tmst.PolaritySign)
+            use byClass = withPlry.reshape( int64 tmst.Config.Classes, -1L )
+            byClass.sum(1L, ``type``= torch.float32)
+        else
+            use withPlry = clauseEvals.mul(tmst.PolaritySign)
+            use byClass = withPlry.reshape( int64 tmst.Config.Classes, -1L )
+            byClass.sum(1L, ``type``= torch.float32)
+            
 
 module Train = 
     ///obtain +/- reward probabilities for each TA (for type I and II feedback)
@@ -127,7 +132,7 @@ module Train =
         pReward
 
     ///postive, negative or no feedback for each TA
-    let taFeeback tmst (feedbackFilter:torch.Tensor) (v:torch.Tensor) (pReward:torch.Tensor) (y:torch.Tensor) =
+    let taFeeback tmst (feedbackFilter:torch.Tensor) (pReward:torch.Tensor) =
         use pr1 = pReward.reshape(feedbackFilter.shape.[0], -1L)
         use ff1 =  feedbackFilter.reshape(-1L,1L)
         use ff2 = ff1.expand_as(pr1)  
@@ -149,29 +154,33 @@ module Train =
         let fp = filterBin.mul(feedback.reshape(actions.shape))
         fp
 
-    ///inplace update clauses
-    let updateClauses_ tmst (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
-        clauses.add_(incrDecr).clamp_(tmst.LowState,tmst.HighState)
-
-    ///udpated clauses as a new tensor (for debugging purposes)
-    let updateClauses tmst (clauses:torch.Tensor) (incrDecr:torch.Tensor) =
-        let clss = clauses.add(incrDecr)
-        clss.clamp_(tmst.LowState,tmst.HighState)
-
-    ///update the clauses for a single class - used in multi-class scenario
-    let updateClass tmst actions clauses clauseEvals (v:torch.Tensor) (X,y:torch.Tensor) = 
-        use uRand = torch.rand_like(clauseEvals,dtype=torch.ScalarType.Float16)              //tensor of uniform random values for Feedback selection
-        use feebackFilter =                                   //bool tensor; true if random <= [selY0 or selY1] (based on the value of y )
-            if y.ToSingle() <= 0.f then 
+    ///update the clauses and weights for a single class
+    let updateClass tmst actions (clauses:torch.Tensor) clauseEvals (weights:torch.Tensor) (v:torch.Tensor) (X,y:torch.Tensor) = 
+        use uRand = torch.rand_like(clauseEvals,dtype=torch.ScalarType.Float16)       //tensor of uniform random values for Feedback selection
+        let yVal = y.ToSingle()
+        let vVal = v.ToSingle()
+        use feebackFilter =                                                           //bool tensor; true if random <= [selY0 or selY1] (based on the value of y )
+            if yVal <= 0.f then 
                 use selY0 = (tmst.TPlus + v.clamp(tmst.TMinus,tmst.TPlus)) / tmst.T2  //feedback selection prob. when y=0 
                 uRand.less_equal(selY0) 
             else 
                 use selY1 = (tmst.TPlus - v.clamp(tmst.TMinus,tmst.TPlus)) / tmst.T2  //feedback selection prob. when y=1
                 uRand.less_equal(selY1)              
         use pReward = rewardProb tmst actions clauseEvals (X,y)
-        use feedback = taFeeback tmst feebackFilter v pReward y
+        use feedback = taFeeback tmst feebackFilter pReward
         use fbIncrDecr = feedbackIncrDecr tmst actions feedback 
-        updateClauses_ tmst clauses fbIncrDecr |> ignore
+        clauses.add_(fbIncrDecr).clamp_(tmst.LowState,tmst.HighState) |> ignore
+        if tmst.Config.MaxWeight > 1 then
+            use oneClauses = clauseEvals.greater(tmst.Zeros)                //clauses that eval to 1
+            use oneClausesFb = oneClauses.logical_and(feebackFilter)        //1-clauses filtered by feedback
+            let wtsDelta =
+                if vVal > yVal then
+                    tmst.MinusOnes
+                else
+                    tmst.Ones
+            use weightChanges = torch.where(oneClausesFb,wtsDelta,tmst.Zeros)
+            use withPolarity = weightChanges.mul(tmst.PlrtySignClass)
+            weights.add_(withPolarity).clamp_(tmst.Ones,tmst.MaxWeightT) |> ignore
 
     let trainStepMulticlass tmst (clauses:torch.Tensor) (X,y:torch.Tensor) = 
         let idx1 = y.ToInt64()
@@ -182,7 +191,7 @@ module Train =
             else
                 let remClss = [|for i in 0L .. int64 (tmst.Config.Classes - 1) do if i <> idx1 then yield i |] 
                 use tRemClss = torch.tensor(remClss,dtype=torch.int64,device=tmst.Config.Device)
-                use notYIdx = torch.randint(int tRemClss.shape.[0],[|1|],dtype=torch.int64,device=tmst.Config.Device)
+                use notYIdx = torch.randint(int tRemClss.shape.[0],[|1|],dtype=torch.int64,device=tmst.Config.Device) //all randomness should be from torch
                 tRemClss.[notYIdx]        
         //when class = y
         let yIdx = y.ToInt32()
@@ -193,7 +202,7 @@ module Train =
         use v1ClsEvals = Eval.andClause tmst v1TAEvals
         let w1        = tmst.ChunkedWeights.[yIdx]
         use v1        = Eval.sumClass tmst v1ClsEvals w1
-        updateClass tmst v1Actions v1Clauses v1ClsEvals v1 (X,tmst.Y1)
+        updateClass tmst v1Actions v1Clauses v1ClsEvals w1 v1 (X,tmst.Y1)
         //when class not y (randomly chosen when classes > 2)
         let notYIdx = notY.ToInt32()
         let v0Clauses = tmst.ChunkedClauses.[notYIdx]
@@ -203,30 +212,7 @@ module Train =
         use v0ClsEvals = Eval.andClause tmst v0TAEvals
         let w0        = tmst.ChunkedWeights.[notYIdx]
         use v0        = Eval.sumClass tmst v0ClsEvals w0
-        updateClass tmst v0Actions v0Clauses v0ClsEvals v0 (X,tmst.Y0)        
-
-    /////update clauses on single input - optimized for producton
-    //let trainStep tmst clauses (X,y) = 
-    //    let actions,taEvals = Eval.evalTA tmst true clauses X //num_clauses * input
-    //    use actions = actions
-    //    use taEvals = taEvals
-    //    use clauseEvals = Eval.andClause tmst taEvals
-    //    use v = Eval.sumClauses tmst clauseEvals
-    //    use pReward = rewardProb tmst actions clauseEvals (X,y)
-    //    use feedback = taFeeback tmst v pReward y
-    //    use fbIncrDecr = feedbackIncrDecr tmst actions feedback 
-    //    updateClauses_ tmst clauses fbIncrDecr |> ignore
-
-    ////debug version of update that returns intermediate results
-    //let trainStepDbg tmst clauses (X,y)  =
-    //    let actions,taEvals = Eval.evalTA tmst true clauses X //num_clauses * input
-    //    let clauseEvals = Eval.andClause tmst taEvals
-    //    let v = Eval.sumClauses tmst clauseEvals
-    //    let pReward = rewardProb tmst actions clauseEvals (X,y)
-    //    let feedback = taFeeback tmst v pReward y
-    //    let fbIncrDecr = feedbackIncrDecr tmst actions feedback 
-    //    let updtClss = updateClauses tmst clauses fbIncrDecr 
-    //    taEvals,clauseEvals,v,pReward,feedback,fbIncrDecr,updtClss
+        updateClass tmst v0Actions v0Clauses v0ClsEvals w0 v0 (X,tmst.Y0)        
 
 module TM =
     let inaction = 0.0f
@@ -295,8 +281,10 @@ module TM =
         let t2 = torch.tensor(2.0f * cfg.T,device=cfg.Device)
         let ones  = torch.tensor([|1|], dtype = cfg.dtype, device = cfg.Device)
         let zeros = torch.tensor([|0|], dtype = cfg.dtype, device = cfg.Device)
+        let minusOnes = torch.tensor([|-1|], dtype = cfg.dtype, device = cfg.Device)
+        let maxW = torch.tensor([|cfg.MaxWeight|], dtype = cfg.dtype, device = cfg.Device) 
         let payout = payout cfg.BoostTruePositiveFeedback cfg.s
-        let weights = torch.tensor([|1|], dtype = cfg.dtype, device = cfg.Device).broadcast_to([| int64 cfg.Classes; int64 cfg.ClausesPerClass |])
+        let weights = torch.tensor([|for i in 1 .. cfg.Classes*cfg.ClausesPerClass -> 1|], dtype = cfg.dtype, device = cfg.Device, dimensions=[| int64 cfg.Classes; int64 cfg.ClausesPerClass |])
         let chunkedClauses = clauses.chunk(int64 cfg.Classes)
         let chunkedWts = weights.chunk(int64 cfg.Classes)
         let tmState =
@@ -310,6 +298,7 @@ module TM =
                 HighState       = torch.tensor([|cfg.TAStates|],dtype=cfg.dtype,device=cfg.Device)
                 Zeros           = zeros
                 Ones            = ones
+                MinusOnes       = minusOnes
                 Config          = cfg
                 TPlus           = tPlus
                 TMinus          = tMinus
@@ -319,6 +308,7 @@ module TM =
                 IsBinary        = isBinary
                 ChunkedClauses  = chunkedClauses
                 ChunkedWeights  = chunkedWts
+                MaxWeightT      = maxW
             }
         {
             Clauses     = clauses
@@ -362,6 +352,7 @@ module TM =
             InputSize                   : int
             Classes                     : int // 2 or more            
             BoostTruePositiveFeedback   : bool
+            MaxWeight                   : int
         }
 
     let private toState (cfg:Config) = 
@@ -374,6 +365,7 @@ module TM =
             ClausesPerClass             = cfg.ClausesPerClass
             InputSize                   = cfg.InputSize
             Classes                     = cfg.Classes
+            MaxWeight                   = cfg.MaxWeight
         }
 
     let private toConfig dvc (cfg:State) : Config = 
@@ -388,8 +380,10 @@ module TM =
             ClausesPerClass             = cfg.ClausesPerClass
             InputSize                   = cfg.InputSize
             Classes                     = cfg.Classes
+            MaxWeight                   = cfg.MaxWeight
         }
 
+    /// release GPU or CPU memory associated with this TM
     let dispose (tm:TM) =
         tm.Weights.Dispose()
         tm.Clauses.Dispose()
@@ -408,6 +402,7 @@ module TM =
         tm.TMState.Y0.Dispose()
         tm.TMState.Y1.Dispose()       
 
+    ///export TAstates and weights as flat integer arrays
     let exportLearned (tm:TM) = 
         use clauses = tm.Clauses.to_type(torch.int32).cpu()
         use weights = tm.Weights.to_type(torch.int32).cpu()

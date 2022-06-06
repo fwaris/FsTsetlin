@@ -2,8 +2,12 @@
 open FsTsetlin
 open TorchSharp
 open System
+let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
 
 let cls = torch.tensor([|for i in 1 .. 2*6 -> i |], dimensions=[|2L;6L|])
+cls.Handle
+cls.ElementSize
+cls.size()
 let T_cls = Utils.tensorData<int> cls
 let inp = 
     [

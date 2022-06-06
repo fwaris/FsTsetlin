@@ -174,10 +174,10 @@ module Train =
             use oneClauses = clauseEvals.greater(tmst.Zeros)                //clauses that eval to 1
             use oneClausesFb = oneClauses.logical_and(feebackFilter)        //1-clauses filtered by feedback
             let wtsDelta =
-                if vVal > yVal then
-                    tmst.MinusOnes
-                else
+                if vVal > 0.f && yVal > 0.f then
                     tmst.Ones
+                else
+                    tmst.MinusOnes
             use weightChanges = torch.where(oneClausesFb,wtsDelta,tmst.Zeros)
             use withPolarity = weightChanges.mul(tmst.PlrtySignClass)
             weights.add_(withPolarity).clamp_(tmst.Ones,tmst.MaxWeightT) |> ignore

@@ -1,13 +1,13 @@
 ﻿#load @"../scripts/packages.fsx"
 #r "nuget: FSharp.Control.AsyncSeq"
 
-let LIBTORCH = 
-    let path = System.Environment.GetEnvironmentVariable("LIBTORCH")
-    if path <> null then path else @"D:\s\libtorch\lib\torch_cuda.dll"
-System.Runtime.InteropServices.NativeLibrary.Load(LIBTORCH) |> ignore
-let path = System.Environment.GetEnvironmentVariable("path")
-let path' = $"{path};{LIBTORCH}"
-System.Environment.SetEnvironmentVariable("path",path')
+//let LIBTORCH = 
+//    let path = System.Environment.GetEnvironmentVariable("LIBTORCH")
+//    if path <> null then path else @"D:\s\libtorch\lib\torch_cuda.dll"
+//System.Runtime.InteropServices.NativeLibrary.Load(LIBTORCH) |> ignore
+//let path = System.Environment.GetEnvironmentVariable("path")
+//let path' = $"{path};{LIBTORCH}"
+//System.Environment.SetEnvironmentVariable("path",path')
 open System
 open System.IO
 
@@ -46,12 +46,13 @@ let cfg =
     { Config.Default with
         s           = 3.0f
         T           = 10.0f
-        TAStates    = 1000
-        dtype       = torch.int16
+        TAStates    = 100       
+        dtype       = torch.int8
         Device      = device
         InputSize   = inputSize
-        ClausesPerClass = 100 //total = 10 * 4000 = 40000
+        ClausesPerClass = 100 //total = 10 * 100 = 1000
         Classes         = classes
+        MaxWeight       = 1
     }
 
 let tm = TM.create cfg

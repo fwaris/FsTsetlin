@@ -7,7 +7,7 @@
     <Company />
     <Description>Tsetlin machine  ML  library.  Uses tensor operations to parallelize learning and prediction. It utilizes the tensor library underpinning TorchSharp/PyTorch.</Description>
     <Copyright>2022</Copyright>
-    <Version>0.4.3</Version>
+    <Version>0.4.6</Version>
     <PackageProjectUrl>https://github.com/fwaris/FsTsetlin</PackageProjectUrl>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/fwaris/FsTsetlin</RepositoryUrl>

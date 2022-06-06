@@ -1,7 +1,7 @@
-﻿#r "nuget: TorchSharp"
-#r "nuget: Plotly.NET"
+﻿#r "nuget: Plotly.NET"
 #r "nuget: FsPickler"
-#r "nuget: libtorch-cpu, 1.10.0.1"   // cpu only version
+#r "nuget: TorchSharp-cuda-windows"
+#r "nuget: TorchSharp"
 
 //let LIBTORCH = 
 //    let path = System.Environment.GetEnvironmentVariable("LIBTORCH")

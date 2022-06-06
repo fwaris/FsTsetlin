@@ -30,7 +30,7 @@ let toTensor cfg  (batch:(int[]*int)[]) =
 
 //let ft = lt |> Array.tryFind (fun (xs,y) -> xs |> Array.exists (fun y-> (y=0 || y=1) |> not))
 
-let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
+let device = torch.CPU // if torch.cuda.is_available() then torch.CUDA else torch.CPU
 let inputSize = ((Seq.head mnistTrain) |> fst |> Array.length) / 2
 let classes = (mnistTrain |> Seq.map snd) |> Seq.distinct |> Seq.length
 let cfg =
@@ -43,7 +43,7 @@ let cfg =
         InputSize   = inputSize
         ClausesPerClass = 100 //total = 10 * 100 = 1000
         Classes         = classes
-        MaxWeight       = 1
+        MaxWeight       = 16
     }
 
 let tm = TM.create cfg
@@ -71,20 +71,23 @@ let train epochs =
             TM.trainBatch (X,y) tm
             X.Dispose()
             y.Dispose()) 
-            
-let runTrain i =
+
+let trainTimed i =
     let tstart = DateTime.Now
-    train i
+    train 1
     let tend = DateTime.Now
     let elapsed = (tend - tstart).TotalMinutes
     let acc = eval()
     printfn $"run: {i}, elapsed minutes: {elapsed}, accuracy: {acc}"
     elapsed,acc
-
+            
+let runTrain i =
+    for j in 1 .. i do 
+        trainTimed j |> ignore
 
 let runner() = 
     async {
-        let results = [for i in 1 .. 10 -> runTrain i ]
+        let results = [for i in 1 .. 10 -> trainTimed i ]
         let avgTime = results |> List.map fst |> List.average
         printf $"average time minutes: {avgTime}"    
     }
@@ -93,6 +96,6 @@ let runner() =
 runner() |> Async.Start
 
 *)
-let run() = runTrain 5
+let run() = runTrain 1
 
 

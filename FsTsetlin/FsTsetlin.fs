@@ -8,7 +8,6 @@ type Config =
         s                           : float32
         T                           : float32
         TAStates                    : int
-        dtype                       : torch.ScalarType
         Device                      : torch.Device
         ClausesPerClass             : int
         InputSize                   : int
@@ -22,7 +21,6 @@ type Config =
                 s                           = 3.9f
                 T                           = 15.0f
                 TAStates                    = 100
-                dtype                       = torch.int32
                 Device                      = torch.CPU
                 ClausesPerClass             = 100
                 InputSize                   = 0
@@ -142,14 +140,14 @@ module Train =
         use pSelFltr = uRandRwrd.less_equal(pRwrd_abs)
         use pFilter = feedbackExpanded.logical_and(pSelFltr)
         use rwdSign = pReward.sign()
-        use rwdSignInt = rwdSign.to_type(tmst.Config.dtype)
+        use rwdSignInt = rwdSign.to_type(torch.int8)
         let fb = rwdSignInt.where(pFilter,tmst.Zeros)
         fb
 
     ///calculate feedback incr/decr values based on selected feedback reward(+)/penalty(-)/ignore(0) and TA state
     let feedbackIncrDecr tmst (actions:torch.Tensor) (feedback:torch.Tensor) =
-        use one = torch.tensor([|1|],dtype=tmst.Config.dtype, device=tmst.Config.Device)
-        use minusOne = torch.tensor([|-1|],dtype=tmst.Config.dtype, device=tmst.Config.Device)
+        use one = torch.tensor([|1|],dtype=torch.int16, device=tmst.Config.Device)
+        use minusOne = torch.tensor([|-1|],dtype=torch.int16, device=tmst.Config.Device)
         use filterBin = torch.where(actions,one,minusOne)
         let fp = filterBin.mul(feedback.reshape(actions.shape))
         fp
@@ -263,39 +261,49 @@ module TM =
         let rng = System.Random()
         let isBinary = cfg.Classes = 2
         let numTAs = cfg.Classes * cfg.ClausesPerClass * (cfg.InputSize * 2)
-        let initialState = [|for i in 1..numTAs -> if rng.NextDouble() < 0.5 then cfg.TAStates else cfg.TAStates+1|]
-        let clauses = torch.tensor(initialState, dtype=cfg.dtype, dimensions = [|int64 (cfg.Classes * cfg.ClausesPerClass); int64 (cfg.InputSize * 2) |], device=cfg.Device)
-        let plrtySgn = [|for i in 1 .. (cfg.Classes * cfg.ClausesPerClass) -> if i % 2 = 0 then -1 else 1|]  //polarity sign +1/-1; used for summing clause evaluation
-        let plrtySgnCls = [|for i in 1 .. cfg.ClausesPerClass -> if i % 2 = 0 then -1 else 1|]
-        let numClauses = (*if isBinary then cfg.Classes * cfg.ClausesPerClass else *)cfg.ClausesPerClass
-        let plrtyBin = [|for i in 1 .. numClauses -> i % 2|]                                                  //polarity index 1/0; used for indexing into the payout matrix
+        let initialState = [|for i in 1..numTAs -> if rng.NextDouble() < 0.5 then 0 else 1|]
+        let clauses = torch.tensor(initialState, dtype=torch.int16, dimensions = [|int64 (cfg.Classes * cfg.ClausesPerClass); int64 (cfg.InputSize * 2) |], device=cfg.Device)
+        
+
+        let plrtySgnT =                                                                 
+            let plrtySgn = [|1; -1|]                                                        //use broadcasting to reduce memory 
+            use plrtySgn_1 = torch.tensor(plrtySgn,dtype=torch.int8,device=cfg.Device)
+            use plrtySgn_2 = plrtySgn_1.reshape(1L,2L)
+            use plrtySgn_3 = plrtySgn_2.broadcast_to(int64 (cfg.Classes * cfg.ClausesPerClass / 2), 2L)
+            plrtySgn_3.reshape(int64 (cfg.Classes * cfg.ClausesPerClass))
+
+        let plrtySgnClsT =                                                                 
+            let plrtySgn = [|1; -1|]                                                        //use broadcasting to reduce memory 
+            use plrtySgn_1 = torch.tensor(plrtySgn,dtype=torch.int8,device=cfg.Device)
+            use plrtySgn_2 = plrtySgn_1.reshape(1L,2L)
+            use plrtySgn_3 = plrtySgn_2.broadcast_to(int64 (cfg.ClausesPerClass / 2), 2L)
+            plrtySgn_3.reshape(int64 cfg.ClausesPerClass)
+
         let polarityIdx = 
-            //if isBinary then
-            //    let polarity = torch.tensor(plrtyBin, dtype=torch.int64, device=cfg.Device, dimensions=[|clauses.shape.[0]; 1L|])
-            //    polarity.expand_as(clauses).reshape([|1L;-1L|])
-            //else
-                let polarity = torch.tensor(plrtyBin, dtype=torch.int64, device=cfg.Device, dimensions=[|int64 cfg.ClausesPerClass; 1L|])
-                polarity.broadcast_to(int64 cfg.ClausesPerClass, int64 (2 * cfg.InputSize))
+            let plrtyBin = [|for i in 1 .. cfg.ClausesPerClass -> i % 2|]                                                  //polarity index 1/0; used for indexing into the payout matrix
+            let polarity = torch.tensor(plrtyBin, dtype=torch.int64, device=cfg.Device, dimensions=[|int64 cfg.ClausesPerClass; 1L|])
+            polarity.broadcast_to(int64 cfg.ClausesPerClass, int64 (2 * cfg.InputSize))
+
         let tPlus = torch.tensor(cfg.T, device=cfg.Device)
         let tMinus = torch.tensor(-cfg.T, device=cfg.Device)
         let t2 = torch.tensor(2.0f * cfg.T,device=cfg.Device)
-        let ones  = torch.tensor([|1|], dtype = cfg.dtype, device = cfg.Device)
-        let zeros = torch.tensor([|0|], dtype = cfg.dtype, device = cfg.Device)
-        let minusOnes = torch.tensor([|-1|], dtype = cfg.dtype, device = cfg.Device)
-        let maxW = torch.tensor([|cfg.MaxWeight|], dtype = cfg.dtype, device = cfg.Device) 
+        let ones  = torch.tensor([|1|], dtype = torch.int8, device = cfg.Device)
+        let zeros = torch.tensor([|0|], dtype = torch.int8, device = cfg.Device)
+        let minusOnes = torch.tensor([|-1|], dtype = torch.int8, device = cfg.Device)
+        let maxW = torch.tensor([|cfg.MaxWeight|], dtype = torch.int8, device = cfg.Device) 
         let payout = payout cfg.BoostTruePositiveFeedback cfg.s
-        let weights = torch.tensor([|for i in 1 .. cfg.Classes*cfg.ClausesPerClass -> 1|], dtype = cfg.dtype, device = cfg.Device, dimensions=[| int64 cfg.Classes; int64 cfg.ClausesPerClass |])
+        let weights = torch.tensor([|for i in 1 .. cfg.Classes*cfg.ClausesPerClass -> 1|], dtype = torch.int8, device = cfg.Device, dimensions=[| int64 cfg.Classes; int64 cfg.ClausesPerClass |])
         let chunkedClauses = clauses.chunk(int64 cfg.Classes)
         let chunkedWts = weights.chunk(int64 cfg.Classes)
         let tmState =
             {
                 PolarityIndex   = polarityIdx
-                PolaritySign    = torch.tensor(plrtySgn, dtype=cfg.dtype, device=cfg.Device)
-                PlrtySignClass  = torch.tensor(plrtySgnCls, dtype=cfg.dtype, device=cfg.Device)
+                PolaritySign    = plrtySgnT
+                PlrtySignClass  = plrtySgnClsT
                 PayoutMatrix    = torch.tensor(payout, dimensions = [|2L;2L;2L;2L;2L|], device=cfg.Device)   
-                MidState        = torch.tensor([|0|],dtype=cfg.dtype, device=cfg.Device)
-                LowState        = torch.tensor([|-cfg.TAStates|],dtype=cfg.dtype,device=cfg.Device)
-                HighState       = torch.tensor([|cfg.TAStates|],dtype=cfg.dtype,device=cfg.Device)
+                MidState        = torch.tensor([|0|],dtype=torch.int16, device=cfg.Device)
+                LowState        = torch.tensor([|-cfg.TAStates|],dtype=torch.int16,device=cfg.Device)
+                HighState       = torch.tensor([|cfg.TAStates|],dtype=torch.int16,device=cfg.Device)
                 Zeros           = zeros
                 Ones            = ones
                 MinusOnes       = minusOnes
@@ -347,7 +355,6 @@ module TM =
             s                           : float32
             T                           : float32
             TAStates                    : int
-            dtype                       : string
             ClausesPerClass             : int
             InputSize                   : int
             Classes                     : int // 2 or more            
@@ -361,7 +368,6 @@ module TM =
             T                           = cfg.T
             BoostTruePositiveFeedback   = cfg.BoostTruePositiveFeedback
             TAStates                    = cfg.TAStates
-            dtype                       = cfg.dtype.ToString()
             ClausesPerClass             = cfg.ClausesPerClass
             InputSize                   = cfg.InputSize
             Classes                     = cfg.Classes
@@ -369,13 +375,11 @@ module TM =
         }
 
     let private toConfig dvc (cfg:State) : Config = 
-        let dt : torch.ScalarType = System.Enum.Parse<torch.ScalarType>(cfg.dtype)
         {
             s                           = cfg.s
             T                           = cfg.T
             BoostTruePositiveFeedback   = cfg.BoostTruePositiveFeedback
             TAStates                    = cfg.TAStates
-            dtype                       = dt
             Device                      = dvc
             ClausesPerClass             = cfg.ClausesPerClass
             InputSize                   = cfg.InputSize
@@ -426,8 +430,8 @@ module TM =
         let tm = create cfg
         use initClauses = tm.Clauses
         use initWeights = tm.Weights
-        let clauses = torch.tensor(taStates,dtype=cfg.dtype,device=cfg.Device,dimensions=initClauses.shape)
-        let weights = torch.tensor(weights,dtype=cfg.dtype,device=cfg.Device,dimensions=initWeights.shape)
+        let clauses = torch.tensor(taStates,dtype=torch.int16,device=cfg.Device,dimensions=initClauses.shape)
+        let weights = torch.tensor(weights,dtype=torch.int16,device=cfg.Device,dimensions=initWeights.shape)
         let chunkedClauses = clauses.chunk(int64 cfg.Classes)
         let chunkedWts = weights.chunk(int64 cfg.Classes)
         let tmst = 

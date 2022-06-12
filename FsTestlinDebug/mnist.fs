@@ -22,7 +22,7 @@ open FsTsetlin
 let toTensor cfg  (batch:(int[]*int)[]) =
     let batchSize = int64 batch.Length
     let xs = batch |> Array.collect fst 
-    let X = torch.tensor(xs, dtype = cfg.dtype, device = cfg.Device, dimensions = [| batchSize ; cfg.InputSize*2 |> int64|])
+    let X = torch.tensor(xs, dtype = torch.int8, device = cfg.Device, dimensions = [| batchSize ; cfg.InputSize*2 |> int64|])
     let y = torch.tensor(batch |> Array.map snd, dtype = torch.int64, device = cfg.Device, dimensions = [| batchSize; 1L |> int64|])
     X,y
 
@@ -30,7 +30,7 @@ let toTensor cfg  (batch:(int[]*int)[]) =
 
 //let ft = lt |> Array.tryFind (fun (xs,y) -> xs |> Array.exists (fun y-> (y=0 || y=1) |> not))
 
-let device = torch.CPU // if torch.cuda.is_available() then torch.CUDA else torch.CPU
+let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
 let inputSize = ((Seq.head mnistTrain) |> fst |> Array.length) / 2
 let classes = (mnistTrain |> Seq.map snd) |> Seq.distinct |> Seq.length
 let cfg =
@@ -38,12 +38,11 @@ let cfg =
         s           = 3.0f
         T           = 10.0f
         TAStates    = 100       
-        dtype       = torch.int16
         Device      = device
         InputSize   = inputSize
         ClausesPerClass = 100 //total = 10 * 100 = 1000
         Classes         = classes
-        MaxWeight       = 16
+        MaxWeight       = 1
     }
 
 let tm = TM.create cfg

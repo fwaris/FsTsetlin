@@ -2,8 +2,6 @@
 
 Implements a **Tsetlin machine** learning system in F#. The key difference between this and other Testlin machine implementations is that this library uses *tensor operations* to parallelize learning and prediction. FsTsetlin utilizes the tensor library underpinning TorchSharp/PyTorch. The libary has been tested to work on both CPU and GPU (although extensive performance testing has not been performed as of yet)
 
-Note: This is still a work-in-progress. Please treat it as beta-level code.
-
 ## Tsetline Machine 
 Tsetlin machine (TM) is a recently developed machine learning system based on automata (finite state machines / propositional logic) learning. Please see [this paper](https://arxiv.org/abs/1804.01508) for details. 
 

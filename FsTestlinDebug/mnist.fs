@@ -40,7 +40,7 @@ let cfg =
         TAStates    = 100       
         Device      = device
         InputSize   = inputSize
-        ClausesPerClass = 100 //total = 10 * 100 = 1000
+        ClausesPerClass = 1000 //total = 10 * 100 = 1000
         Classes         = classes
         MaxWeight       = 1
     }

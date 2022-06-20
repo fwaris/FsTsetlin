@@ -89,21 +89,26 @@ module Eval =
         torch.where(fltr2,tmst.Ones,tmst.Zeros)
 
     ///sum positive and negative polarity clause outputs for a single class
-    let sumClass tmst (clauseEvals:torch.Tensor) (weights:torch.Tensor) =
-        use wtd = clauseEvals.mul(weights)
-        use withPlry = wtd.mul(tmst.PlrtySignClass)
-        withPlry.sum(``type``=torch.float32)
+    let sumClass (tmst:TMState) (clauseEvals:torch.Tensor) (weights:torch.Tensor) =
+        if tmst.Config.MaxWeight > 1 then
+            use wtd = clauseEvals.mul_(weights)
+            use withPlry = wtd.mul_(tmst.PlrtySignClass)
+            withPlry.sum(``type``=torch.float32)
+        else
+            use withPlry = clauseEvals.mul_(tmst.PlrtySignClass)
+            withPlry.sum(``type``=torch.float32)
+
 
     ///sum positive and negative polarity clause outputs per class for all classes
     let sumClausesMulticlass tmst (clauseEvals:torch.Tensor) (weights:torch.Tensor) =
         if tmst.Config.MaxWeight > 1 then            
             use wts = weights.reshape(1L,-1L)
-            use wtd = clauseEvals.mul(wts)
-            use withPlry = wtd.mul(tmst.PolaritySign)
+            use wtd = clauseEvals.mul_(wts)
+            use withPlry = wtd.mul_(tmst.PolaritySign)
             use byClass = withPlry.reshape( int64 tmst.Config.Classes, -1L )
             byClass.sum(1L, ``type``= torch.float32)
         else
-            use withPlry = clauseEvals.mul(tmst.PolaritySign)
+            use withPlry = clauseEvals.mul_(tmst.PolaritySign)
             use byClass = withPlry.reshape( int64 tmst.Config.Classes, -1L )
             byClass.sum(1L, ``type``= torch.float32)
             
@@ -257,6 +262,7 @@ module TM =
         |]
 
     let create (cfg:Config) =
+        use _g  = torch.no_grad()       
         if cfg.ClausesPerClass % 2 <> 0 then failwithf "clauses per class should be an even number (for negative/positive polarity)"
         let rng = System.Random()
         let isBinary = cfg.Classes = 2
@@ -334,6 +340,7 @@ module TM =
         let batchSze = X.shape.[0]
         for i in 0L .. batchSze - 1L do
             train (X.[i],y.[i]) tm
+            System.GC.Collect(0,GCCollectionMode.Forced)
 
     let predict X (tm:TM) =
         let actions,taEvals = Eval.evalTA tm.TMState false tm.Clauses X //num_clauses * input
@@ -346,9 +353,12 @@ module TM =
 
     let predictBatch (X:torch.Tensor) (tm:TM) =
         let batchSze = X.shape.[0]
-        [|for i in 0L .. batchSze - 1L do
-            predict X.[i] tm
-        |]
+        let rs = 
+            [|for i in 0L .. batchSze - 1L do
+                predict X.[i] tm
+            |]
+        System.GC.Collect(0,GCCollectionMode.Forced)
+        rs
 
     type private State = 
         {

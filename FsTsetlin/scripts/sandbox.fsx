@@ -4,6 +4,13 @@ open TorchSharp
 open System
 let device = if torch.cuda.is_available() then torch.CUDA else torch.CPU
 
+let x = torch.tensor(6)
+let t2 = torch.tensor(2)
+let m1 = t2.pow(torch.arange(8, dtype=x.dtype))
+m1.data<int>().ToArray()
+torch.bit
+
+
 let cls = torch.tensor([|for i in 1 .. 2*6 -> i |], dimensions=[|2L;6L|])
 cls.Handle
 cls.ElementSize

@@ -71,7 +71,7 @@ module Eval =
         let taOutput = torch.where(actions,input2,tmst.Ones)          //take input if action = include else 1 (which skips excluded input when and'ing)
         let out = 
             if not trainMode then   
-                use oneInc = actions.any(1L,keepDim=true)               //true if there is at least 1 'include' per clause
+                use oneInc = actions.any(1L,keepdim=true)               //true if there is at least 1 'include' per clause
                 if oneInc.any().ToBoolean() then
                     let adjOutput = torch.where(oneInc,taOutput,tmst.Zeros)
                     taOutput.Dispose()
@@ -85,7 +85,7 @@ module Eval =
     ///AND the outputs of TAs by clause
     let andClause tmst (evals:torch.Tensor)  =
         use fltr = evals.bool()
-        use fltr2 = fltr.all(dimension=1L)
+        use fltr2 = fltr.all(dim=1L)
         torch.where(fltr2,tmst.Ones,tmst.Zeros)
 
     ///sum positive and negative polarity clause outputs for a single class

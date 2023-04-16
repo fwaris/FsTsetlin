@@ -2,17 +2,18 @@
 
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
 	 <LangVersion>preview</LangVersion>
     <Authors>Faisal Waris</Authors>
     <Company />
     <Description>Tsetlin machine  ML  library.  Uses tensor operations to parallelize learning and prediction. It utilizes the tensor library underpinning TorchSharp/PyTorch.</Description>
     <Copyright>2022</Copyright>
-    <Version>0.5.1</Version>
+    <Version>0.5.2</Version>
     <PackageProjectUrl>https://github.com/fwaris/FsTsetlin</PackageProjectUrl>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/fwaris/FsTsetlin</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+	<PackageReleaseNotes>rev packages</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,11 +33,11 @@
 
   <ItemGroup>
     <PackageReference Include="FsPickler" Version="5.3.2" />
-    <PackageReference Include="TorchSharp" Version="0.96.6" />
+    <PackageReference Include="TorchSharp" Version="0.99.4" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="6.0.4" />
+    <PackageReference Update="FSharp.Core" Version="7.0.200" />
   </ItemGroup>
 
 </Project>

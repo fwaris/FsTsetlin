@@ -33,8 +33,8 @@ printfn $"cuda: {torch.cuda.is_available()}"
 
 let toTensor cfg (batch:(int[]*int)[]) =
     let batchSize = int64 batch.Length
-    let X = torch.tensor(batch |> Array.collect fst, dtype = torch.int8, device = cfg.Device, dimensions = [| batchSize ; cfg.InputSize*2 |> int64|])
-    let y = torch.tensor(batch |> Array.map snd, dtype = torch.int64, device = cfg.Device, dimensions = [| batchSize; 1L |> int64|])
+    let X = torch.tensor(batch |> Array.collect fst, dtype = torch.int8, device = cfg.Device).reshape([| batchSize ; cfg.InputSize*2 |> int64|])
+    let y = torch.tensor(batch |> Array.map snd, dtype = torch.int64, device = cfg.Device).reshape([| batchSize; 1L |> int64|])
     X,y
 
 let cfg =

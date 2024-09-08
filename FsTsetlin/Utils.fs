@@ -3,10 +3,12 @@ open TorchSharp
 open System
 
 module Utils =
-    type D<'a> = F of 'a[] | T of D<'a>[]
+    type D<'a> = 
+        | A of 'a[]         // flat array of values - from the inner most dimension
+        | G of D<'a>[]      // group of groups or flat arrays
 
     //utility function to get raw tensor data as a recursive structure for debugging purposes
-    let tensorData<'a when 'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = 
+    let getDataNested<'a when 'a: unmanaged and  'a: (new: unit -> 'a) and  'a: struct and 'a :> ValueType>(t:torch.Tensor) = 
         let ts = if t.device<>torch.CPU then t.cpu().data<'a>().ToArray() else t.data<'a>().ToArray()
         let rdims =
             t.shape 
@@ -16,8 +18,8 @@ module Utils =
         let rec loop ds (xs:D<'a>) =
             match ds,xs with
             | [],_                        -> xs
-            | d::[],T ds when d=ds.Length -> T ds
-            | d::[],F ds when d=ds.Length -> F ds
-            | d::rest,T ds -> loop rest (ds |> Array.chunkBySize d |> Array.map T |> T)
-            | d::rest,F ds -> loop rest (ds |> Array.chunkBySize d |> Array.map F |> T)
-        loop rdims (F ts)
+            | d::[],G ds when d=ds.Length -> G ds
+            | d::[],A ds when d=ds.Length -> A ds
+            | d::rest,G ds -> loop rest (ds |> Array.chunkBySize d |> Array.map G |> G)
+            | d::rest,A ds -> loop rest (ds |> Array.chunkBySize d |> Array.map A |> G)
+        loop rdims (A ts)

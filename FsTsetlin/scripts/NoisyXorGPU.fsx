@@ -1,13 +1,13 @@
 ﻿#load @"../scripts/packages.fsx"
 #r "nuget: FSharp.Control.AsyncSeq"
 
-let LIBTORCH = 
-    let path = System.Environment.GetEnvironmentVariable("LIBTORCH")
-    if path <> null then path else @"D:\s\libtorch\lib\torch_cuda.dll"
-System.Runtime.InteropServices.NativeLibrary.Load(LIBTORCH) |> ignore
-let path = System.Environment.GetEnvironmentVariable("path")
-let path' = $"{path};{LIBTORCH}"
-System.Environment.SetEnvironmentVariable("path",path')
+//let LIBTORCH = 
+//    let path = System.Environment.GetEnvironmentVariable("LIBTORCH")
+//    if path <> null then path else @"D:\s\libtorch\lib\torch_cuda.dll"
+//System.Runtime.InteropServices.NativeLibrary.Load(LIBTORCH) |> ignore
+//let path = System.Environment.GetEnvironmentVariable("path")
+//let path' = $"{path};{LIBTORCH}"
+//System.Environment.SetEnvironmentVariable("path",path')
 
 open System.IO
 open FsTsetlin
@@ -29,7 +29,7 @@ let loadData (path:string) =
         X,y)
 
 let taStates (tm:TM) =
-    let dt = tm.Clauses.``to``(torch.CPU).data<int32>().ToArray()
+    let dt = tm.Clauses.``to``(torch.CPU).data<int16>().ToArray()
     dt |> Array.chunkBySize (tm.TMState.Config.InputSize * 2)
 
 let showClauses (tm:TM) =
@@ -44,8 +44,8 @@ printfn $"cuda: {torch.cuda.is_available()}"
 
 let toTensor cfg (batch:(int[]*int)[]) =
     let batchSize = int64 batch.Length
-    let X = torch.tensor(batch |> Array.collect fst, dtype = torch.int8, device = cfg.Device, dimensions = [| batchSize ; cfg.InputSize*2 |> int64|])
-    let y = torch.tensor(batch |> Array.map snd, dtype = torch.int64, device = cfg.Device, dimensions = [| batchSize; 1L |> int64|])
+    let X = torch.tensor(batch |> Array.collect fst, dtype = torch.int8, device = cfg.Device).reshape([| batchSize ; cfg.InputSize*2 |> int64|])
+    let y = torch.tensor(batch |> Array.map snd, dtype = torch.int64, device = cfg.Device).reshape([| batchSize; 1L |> int64|])
     X,y
 
 let cfg =

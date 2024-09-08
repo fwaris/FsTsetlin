@@ -12,7 +12,7 @@ open System
 open System.IO
 
 let loadData (path:string) =
-    File.ReadLines path
+     File.ReadLines path
     |> Seq.map (fun l -> l.Split())
     |> Seq.map (fun xs -> xs |> Array.map int)
     |> Seq.map (fun xs -> 
@@ -20,6 +20,7 @@ let loadData (path:string) =
         let X = Array.append x1 (x1 |> Array.map (function 1 -> 0 | 0 -> 1 | _ -> failwith "only 0 1 expected")) //with negated values
         let y = xs[xs.Length-1]
         X,y)
+    |> Seq.toList
 
 let mnistTrainFile = __SOURCE_DIRECTORY__ + @"/../../data/BinarizedMNISTData/MNISTTraining.txt"
 let mnistTestFile = __SOURCE_DIRECTORY__ + @"/../../data/BinarizedMNISTData/MNISTTest.txt"
@@ -31,8 +32,8 @@ open FsTsetlin
 let toTensor cfg  (batch:(int[]*int)[]) =
     let batchSize = int64 batch.Length
     let xs = batch |> Array.collect fst 
-    let X = torch.tensor(xs, dtype = torch.int8, device = cfg.Device, dimensions = [| batchSize ; cfg.InputSize*2 |> int64|])
-    let y = torch.tensor(batch |> Array.map snd, dtype = torch.int64, device = cfg.Device, dimensions = [| batchSize; 1L |> int64|])
+    let X = torch.tensor(xs, dtype = torch.int8, device = cfg.Device).reshape([| batchSize ; cfg.InputSize*2 |> int64|])
+    let y = torch.tensor(batch |> Array.map snd, dtype = torch.int64, device = cfg.Device).reshape([| batchSize; 1L |> int64|])
     X,y
 
 //let lt = loadData mnistTrainFile |> Seq.toArray

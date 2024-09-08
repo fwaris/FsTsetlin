@@ -26,7 +26,8 @@ let TestEval () =
 
     let X = torch.tensor([|1;0;0;1|],dtype=torch.int8)     
     let v = TM.predict X tm
-    Assert.Contains(v,[|0;1|])
+    let vValid = Array.contains v [|0;1|]
+    Assert.That(vValid,"predict failed")
 
 
 [<Test>]
@@ -90,8 +91,8 @@ let LoadSave () =
     TM.save fn tm
     let tm2 = TM.load torch.CPU fn
     let cls2,wts2 = TM.exportLearned tm2
-    Assert.True( (cls1 = cls2) , message = "clauses states not match")
-    Assert.True( (wts1 = wts2) , message = "clauses weights not match")
+    Assert.That( (cls1 = cls2) , message = "clauses states not match")
+    Assert.That( (wts1 = wts2) , message = "clauses weights not match")
 
     TM.train (X,y) tm2
     ()
